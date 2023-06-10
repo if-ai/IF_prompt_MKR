@@ -9,8 +9,11 @@ run_cmd("python server.py --model-menu --model Wizard-Vicuna-13B-Uncensored-GPTQ
 you need api --listen-port 7861 --listen
 and in automatic --api
 
-Download my characters from my civitai or kofi page or move the characters from the extension folder to your oobabooga Character Folder and place the script on extensions or install it from url inside A1111
+Move the characters from the extension folder to your oobabooga Character Folder and place the script on extensions or install it from url inside A1111
+
+Discover More
 https://ko-fi.com/impactframes/shop
+
 https://civitai.com/user/impactframes/models
 
 Here is an oveview
