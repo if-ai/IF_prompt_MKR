@@ -82,6 +82,9 @@ class Script(scripts.Script):
         input_prompt = gr.inputs.Textbox(lines=1, placeholder=params['input_prompt'], label="Input Prompt")
         prompt_subfix = gr.inputs.Textbox(lines=1, placeholder=params['prompt_subfix'], label="Subfix for adding Loras (optional)")
         negative_prompt = gr.inputs.Textbox(lines=2, placeholder=params['negative_prompt'], label="Negative Prompt")
+        excluded_words = gr.inputs.Textbox(lines=1, placeholder="Enter words to exclude, separated by commas", label="Excluded Words (Case Sensitive)")
+        #with gr.Row():
+           #prompt_count = gr.Number(value=1, label="this makes the batch count")
         
 
         selected_character.change(lambda x: params.update({'selected_character': x}), selected_character, None)
@@ -89,12 +92,13 @@ class Script(scripts.Script):
         input_prompt.change(lambda x: params.update({'input_prompt': x}), input_prompt, None)
         prompt_subfix.change(lambda x: params.update({'prompt_subfix': x}), prompt_subfix, None)
         negative_prompt.change(lambda x: params.update({'negative_prompt': x}), negative_prompt, None)
+        excluded_words.change(lambda x: params.update({'excluded_words': [word.strip() for word in x.split(',')] if x else []}), excluded_words, None)
      
-        return [selected_character, prompt_prefix, input_prompt, negative_prompt, prompt_subfix]
+        return [selected_character, prompt_prefix, input_prompt, negative_prompt, prompt_subfix, excluded_words]
 
 
-    def run(self, p, selected_character ,prompt_prefix, input_prompt, negative_prompt, prompt_subfix, *args, **kwargs):
-        generated_text = self.generate_text(selected_character, input_prompt)
+    def run(self, p, selected_character ,prompt_prefix, input_prompt, negative_prompt, prompt_subfix, excluded_words, *args, **kwargs):
+        generated_text = self.generate_text(selected_character, input_prompt, excluded_words)
         combined_prompt = prompt_prefix + ' ' + generated_text + ' ' + prompt_subfix
         p.prompt = combined_prompt
         p.negative_prompt = negative_prompt
@@ -106,9 +110,10 @@ class Script(scripts.Script):
  
 
   
-    def generate_text(self, character, prompt):
+    def generate_text(self, character, prompt, excluded_words):
 
         print("Generating text...")
+        generated_text = ''
         stopping = shared.opts.data.get("stopping_string", None)
         if not stopping:
             stopping = "### Assistant:"
@@ -161,15 +166,21 @@ class Script(scripts.Script):
 
 
         if response.status_code == 200:
-            print (response.content)
-            results = json.loads(response.content)['results']
-            if results:
-                history = results[0]['history']
-                if history:
-                    visible = history['visible']
-                    if visible:
-                        generated_text = visible[-1][1]
-            return generated_text
+          print(response.content)
+          results = json.loads(response.content)['results']
+          if results:
+              history = results[0]['history']
+              if history:
+                  visible = history['visible']
+                  if visible:
+                      generated_text = visible[-1][1]
+
+          # Add the exclusion code here
+          if excluded_words:
+              generated_text = ' '.join(word for word in generated_text.split() if word not in excluded_words)
+          
+          return generated_text
+
         
     def process_images(self, p):
         state.job_count = 0
@@ -178,7 +189,3 @@ class Script(scripts.Script):
         proc = process_images(p)
 
         return Processed(p, [proc.images[0]], p.seed, "", all_prompts=proc.all_prompts, infotexts=proc.infotexts)
-        
-
-
-
