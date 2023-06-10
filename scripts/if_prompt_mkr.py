@@ -114,7 +114,6 @@ class Script(scripts.Script):
     def generate_text(self, character, prompt, excluded_words):
 
         print("Generating text...")
-        generated_text = ''
         stopping = shared.opts.data.get("stopping_string", None)
         if not stopping:
             stopping = "### Assistant:"
@@ -163,32 +162,35 @@ class Script(scripts.Script):
         } 
 
         response = requests.post("http://127.0.0.1:5000/api/v1/chat",
-                            data=json.dumps(data), headers=headers)
-
+                         data=json.dumps(data), headers=headers)
 
         if response.status_code == 200:
-          print(response.content)
-          results = json.loads(response.content)['results']
-          if results:
-              history = results[0]['history']
-              if history:
-                  visible = history['visible']
-                  if visible:
-                      generated_text = visible[-1][1]
+            print(response.content)
+            results = json.loads(response.content)['results']
+            if results:
+                history = results[0]['history']
+                if history:
+                    visible = history['visible']
+                    if visible:
+                        generated_text = visible[-1][1]
 
-        # Check if there's an <audio> tag in the generated_text
-        if '<audio' in generated_text:
-            # Print that audio has been generated
-            print("Audio has been generated.")
+                        # Remove words from excluded_words from generated_text
+                        if excluded_words:
+                            generated_text = ' '.join(word for word in generated_text.split() if word not in excluded_words)
 
-            # Remove the <audio> tag and the text between it from generated_text
-            generated_text = re.sub(r'<audio.*?>.*?</audio>', '', generated_text)
+                        # Check if there's an <audio> tag in the generated_text
+                        if '<audio' in generated_text:
+                            # Print that audio has been generated
+                            print("Audio has been generated.")
 
-        # Remove words from excluded_words from generated_text
-        if excluded_words:
-            generated_text = ' '.join(word for word in generated_text.split() if word not in excluded_words)
-          
-        return generated_text
+                            # Remove the <audio> tag and the text between it from generated_text
+                            generated_text = re.sub(r'<audio.*?>.*?</audio>', '', generated_text)
+
+                        return generated_text
+            else:
+                print("No results found.")
+        else:
+            print("Error: Request failed with status code, probably Ooga isn't running with API flags check the readme", response.status_code)
 
         
     def process_images(self, p):
