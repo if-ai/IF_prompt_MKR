@@ -3,6 +3,7 @@ import gradio as gr
 import os
 import requests
 import json
+import re
 
 from modules import script_callbacks, shared
 from modules.processing import Processed, process_images
@@ -82,7 +83,7 @@ class Script(scripts.Script):
         input_prompt = gr.inputs.Textbox(lines=1, placeholder=params['input_prompt'], label="Input Prompt")
         prompt_subfix = gr.inputs.Textbox(lines=1, placeholder=params['prompt_subfix'], label="Subfix for adding Loras (optional)")
         negative_prompt = gr.inputs.Textbox(lines=2, placeholder=params['negative_prompt'], label="Negative Prompt")
-        excluded_words = gr.inputs.Textbox(lines=1, placeholder="Enter words to exclude, separated by commas", label="Excluded Words (Case Sensitive)")
+        excluded_words = gr.inputs.Textbox(lines=1, placeholder="Enter case-sensitive words to exclude, separated by commas", label="Excluded Words")
         #with gr.Row():
            #prompt_count = gr.Number(value=1, label="this makes the batch count")
         
@@ -175,11 +176,19 @@ class Script(scripts.Script):
                   if visible:
                       generated_text = visible[-1][1]
 
-          # Add the exclusion code here
-          if excluded_words:
-              generated_text = ' '.join(word for word in generated_text.split() if word not in excluded_words)
+        # Check if there's an <audio> tag in the generated_text
+        if '<audio' in generated_text:
+            # Print that audio has been generated
+            print("Audio has been generated.")
+
+            # Remove the <audio> tag and the text between it from generated_text
+            generated_text = re.sub(r'<audio.*?>.*?</audio>', '', generated_text)
+
+        # Remove words from excluded_words from generated_text
+        if excluded_words:
+            generated_text = ' '.join(word for word in generated_text.split() if word not in excluded_words)
           
-          return generated_text
+        return generated_text
 
         
     def process_images(self, p):
