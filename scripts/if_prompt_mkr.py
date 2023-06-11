@@ -8,12 +8,12 @@ import re
 from modules import script_callbacks, shared
 from modules.processing import Processed, process_images
 from modules.shared import state
+from scripts.negfiles import get_negative
+from scripts.modeltags import get_loras, get_embeddings
 
 script_dir = scripts.basedir()
-#script_name = os.path.splitext(os.path.basename(__file__))[0]
+#script_name = os.path.splitext(os.path.basename(__file__))[0] # I might use this later
 
-
-script_dir = scripts.basedir()
 
 def on_ui_settings():
     section=("ifpromptmkr", "iFpromptMKR")
@@ -60,49 +60,89 @@ class Script(scripts.Script):
     def title(self):
         return "iF_prompt_MKR"
 
-    def show(self, is_img2img):
-        return True
 
     def ui(self, is_img2img):
+        neg_prompts = get_negative(os.path.join(script_dir, "negfiles"))
 
-        # Get list of character names from json files in the character directory
         character_list = get_character_list()
 
         params = {
             'selected_character': character_list if character_list else ['if_ai_SD', 'iF_Ai_SD_b', 'iF_Ai_SD_NSFW'],
             'prompt_prefix': 'Style-SylvaMagic, ',
             'input_prompt': '(Dark elf empress:1.2), enchanted Forrest',
-            'negative_prompt': '(worst quality, low quality:1.3)',
+            'negative_prompt': '(Worst quality, Low quality:1.4), NSFW, ugly, ng_deepnegative_v1_75t, negative_hand-neg,',
             'prompt_subfix': '(rim lighting,:1.1) two tone lighting, <lora:epiNoiseoffset_v2:0.8>'
 
         }
 
         
-        selected_character = gr.inputs.Dropdown(label="characters", choices=params['selected_character'])
-        prompt_prefix = gr.inputs.Textbox(lines=1, placeholder=params['prompt_prefix'], label="Prompt Prefix")
-        input_prompt = gr.inputs.Textbox(lines=1, placeholder=params['input_prompt'], label="Input Prompt")
-        prompt_subfix = gr.inputs.Textbox(lines=1, placeholder=params['prompt_subfix'], label="Subfix for adding Loras (optional)")
-        negative_prompt = gr.inputs.Textbox(lines=2, placeholder=params['negative_prompt'], label="Negative Prompt")
-        excluded_words = gr.inputs.Textbox(lines=1, placeholder="Enter case-sensitive words to exclude, separated by commas", label="Excluded Words")
-        #with gr.Row():
-           #prompt_count = gr.Number(value=1, label="this makes the batch count")
-        
+        def on_neg_prompts_change(x):
+            
+            filename = neg_prompts[x][1]
 
+            with open(filename, 'r') as file:
+                new_neg_prompt = file.read()
+
+            params.update({'negative_prompt': str(new_neg_prompt)})
+            negative_prompt_text.value = str(new_neg_prompt)
+
+            return new_neg_prompt
+        
+        with gr.Row():
+            input_prompt = gr.inputs.Textbox(lines=1, placeholder=params['input_prompt'], label="Input Prompt")
+            selected_character = gr.inputs.Dropdown(label="characters", choices=params['selected_character'])
+        
+        #The Idea is chosing and embeding and lora and will populate the keywords automatically 
+        with gr.Accordion('Prefix & TIembeddings', open=True):
+            ti_choices = ["None"]
+            ti_choices.extend(get_embeddings())
+            with gr.Row():
+                prompt_prefix = gr.inputs.Textbox(lines=1, placeholder=params['prompt_prefix'], label="Prompt Prefix")
+                embeddings_model = gr.inputs.Dropdown(label="Embeddings Model", choices=ti_choices)
+
+        with gr.Accordion('Subfix & Loras', open=True):
+            lora_choices = ["None"]
+            lora_choices.extend(get_loras())
+            with gr.Row(equal_height=True):
+                prompt_subfix = gr.inputs.Textbox(lines=1, placeholder=params['prompt_subfix'], label="Subfix for adding Loras (optional)")
+                lora_model = gr.inputs.Dropdown(label="Lora Model", choices=lora_choices)
+
+           
+                        
+        
+        with gr.Row():  
+            neg_prompts_dropdown = gr.Dropdown(
+                label="neg_prompts", 
+                choices=[n[0] for n in neg_prompts],
+                type="index", 
+                elem_id="ifpromptmkr_neg_prompts_dropdown")
+            negative_prompt_text = gr.Textbox(lines=4, default=params['negative_prompt'], label="Negative Prompt") #, default_value=neg_prompts[0][1]
+        with gr.Row():
+            excluded_words = gr.inputs.Textbox(lines=1, placeholder="Enter case-sensitive words to exclude, separated by commas", label="Excluded Words")
+        
+            #prompt_count = gr.Number(value=1, label="How many prompts you need")
+            #I plan to make a batch count option later for apending prompts and save them to a file, 
+            #the idea is to make variations of the same prompt, will be useful for livestreams
+        
         selected_character.change(lambda x: params.update({'selected_character': x}), selected_character, None)
         prompt_prefix.change(lambda x: params.update({'prompt_prefix': x}), prompt_prefix, None)
         input_prompt.change(lambda x: params.update({'input_prompt': x}), input_prompt, None)
         prompt_subfix.change(lambda x: params.update({'prompt_subfix': x}), prompt_subfix, None)
-        negative_prompt.change(lambda x: params.update({'negative_prompt': x}), negative_prompt, None)
+        
         excluded_words.change(lambda x: params.update({'excluded_words': [word.strip() for word in x.split(',')] if x else []}), excluded_words, None)
-     
-        return [selected_character, prompt_prefix, input_prompt, negative_prompt, prompt_subfix, excluded_words]
+        #prompt_count.change(lambda x: params.update({'prompt_count': x}), prompt_count, None)
+        
+        neg_prompts_dropdown.change(on_neg_prompts_change, neg_prompts_dropdown, negative_prompt_text)
+        negative_prompt_text.change(lambda x: params.update({'negative_prompt': x}), negative_prompt_text, None)
+        lora_model.change(lambda x: params.update({'lora_model': x}), lora_model, None)
 
+        return [selected_character, prompt_prefix, input_prompt, prompt_subfix, excluded_words, neg_prompts_dropdown, negative_prompt_text]
 
-    def run(self, p, selected_character ,prompt_prefix, input_prompt, negative_prompt, prompt_subfix, excluded_words, *args, **kwargs):
+    def run(self, p, selected_character ,prompt_prefix, input_prompt, negative_prompt_text, prompt_subfix, excluded_words, *args, **kwargs):
         generated_text = self.generate_text(selected_character, input_prompt, excluded_words)
         combined_prompt = prompt_prefix + ' ' + generated_text + ' ' + prompt_subfix
         p.prompt = combined_prompt
-        p.negative_prompt = negative_prompt
+        p.negative_prompt_text = negative_prompt_text
         p.prompt_subfix = prompt_subfix
         p.selected_character = selected_character
         p.input_prompt = input_prompt
@@ -127,7 +167,7 @@ class Script(scripts.Script):
 
         data = {
             'user_input': prompt,
-            'history': {'internal': [], 'visible': []},  # Add this line
+            'history': {'internal': [], 'visible': []}, #this is the history of the chat, it's not used here but it's needed for the chat to work
             'mode': "chat",
             'character': character,
             'instruction_template': 'Wizard-Mega',
@@ -178,12 +218,11 @@ class Script(scripts.Script):
                         if excluded_words:
                             generated_text = ' '.join(word for word in generated_text.split() if word not in excluded_words)
 
-                        # Check if there's an <audio> tag in the generated_text
+                        # Remove audio tags from generated_text
                         if '<audio' in generated_text:
-                            # Print that audio has been generated
+                            
                             print("Audio has been generated.")
 
-                            # Remove the <audio> tag and the text between it from generated_text
                             generated_text = re.sub(r'<audio.*?>.*?</audio>', '', generated_text)
 
                         return generated_text
