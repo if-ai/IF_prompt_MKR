@@ -16,7 +16,7 @@ script_dir = scripts.basedir()
 
 
 def on_ui_settings():
-    section=("ifpromptmkr", "iFpromptMKR")
+    section=("if_prompt_mkr", "iF_prompt_MKR")
     shared.opts.add_option("character_path", shared.OptionInfo(
       "", "Select an iF or other SD prompt maker character you want to use inside the Oobabooga character Directory json only", section=section))
     shared.opts.add_option("stopping_string", shared.OptionInfo(
@@ -84,7 +84,7 @@ class Script(scripts.Script):
                 new_neg_prompt = file.read()
 
             params.update({'negative_prompt': str(new_neg_prompt)})
-            negative_prompt_text.value = str(new_neg_prompt)
+            negative_prompt.value = str(new_neg_prompt)
 
             return new_neg_prompt
         
@@ -107,16 +107,13 @@ class Script(scripts.Script):
                 prompt_subfix = gr.inputs.Textbox(lines=1, placeholder=params['prompt_subfix'], label="Subfix for adding Loras (optional)")
                 lora_model = gr.inputs.Dropdown(label="Lora Model", choices=lora_choices)
 
-           
-                        
-        
         with gr.Row():  
             neg_prompts_dropdown = gr.Dropdown(
                 label="neg_prompts", 
                 choices=[n[0] for n in neg_prompts],
                 type="index", 
-                elem_id="ifpromptmkr_neg_prompts_dropdown")
-            negative_prompt_text = gr.Textbox(lines=4, default=params['negative_prompt'], label="Negative Prompt") #, default_value=neg_prompts[0][1]
+                elem_id="iF_prompt_MKR_neg_prompts_dropdown")
+            negative_prompt = gr.Textbox(lines=4, default=params['negative_prompt'], label="Negative Prompt") #, default_value=neg_prompts[0][1]
         with gr.Row():
             excluded_words = gr.inputs.Textbox(lines=1, placeholder="Enter case-sensitive words to exclude, separated by commas", label="Excluded Words")
         
@@ -132,17 +129,17 @@ class Script(scripts.Script):
         excluded_words.change(lambda x: params.update({'excluded_words': [word.strip() for word in x.split(',')] if x else []}), excluded_words, None)
         #prompt_count.change(lambda x: params.update({'prompt_count': x}), prompt_count, None)
         
-        neg_prompts_dropdown.change(on_neg_prompts_change, neg_prompts_dropdown, negative_prompt_text)
-        negative_prompt_text.change(lambda x: params.update({'negative_prompt': x}), negative_prompt_text, None)
-        lora_model.change(lambda x: params.update({'lora_model': x}), lora_model, None)
+        neg_prompts_dropdown.change(on_neg_prompts_change, neg_prompts_dropdown, negative_prompt)
+        negative_prompt.change(lambda x: params.update({'negative_prompt': x}), negative_prompt, None)
+        #lora_model.change(lambda x: params.update({'lora_model': x}), lora_model, None)
 
-        return [selected_character, prompt_prefix, input_prompt, prompt_subfix, excluded_words, neg_prompts_dropdown, negative_prompt_text]
+        return [selected_character, prompt_prefix, input_prompt, prompt_subfix, excluded_words, negative_prompt]
 
-    def run(self, p, selected_character ,prompt_prefix, input_prompt, negative_prompt_text, prompt_subfix, excluded_words, *args, **kwargs):
+    def run(self, p, selected_character ,prompt_prefix, input_prompt, prompt_subfix, excluded_words, negative_prompt, *args, **kwargs):
         generated_text = self.generate_text(selected_character, input_prompt, excluded_words)
         combined_prompt = prompt_prefix + ' ' + generated_text + ' ' + prompt_subfix
         p.prompt = combined_prompt
-        p.negative_prompt_text = negative_prompt_text
+        p.negative_prompt = negative_prompt
         p.prompt_subfix = prompt_subfix
         p.selected_character = selected_character
         p.input_prompt = input_prompt
@@ -151,7 +148,7 @@ class Script(scripts.Script):
  
 
   
-    def generate_text(self, character, prompt, excluded_words):
+    def generate_text(self, character, prompt, words):
 
         print("Generating text...")
         stopping = shared.opts.data.get("stopping_string", None)
@@ -215,8 +212,8 @@ class Script(scripts.Script):
                         generated_text = visible[-1][1]
 
                         # Remove words from excluded_words from generated_text
-                        if excluded_words:
-                            generated_text = ' '.join(word for word in generated_text.split() if word not in excluded_words)
+                        if words:
+                            generated_text = ' '.join(word for word in generated_text.split() if word not in words)
 
                         # Remove audio tags from generated_text
                         if '<audio' in generated_text:
