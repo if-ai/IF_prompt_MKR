@@ -1,16 +1,9 @@
 import modules.shared as shared
 import modules.scripts as scripts
-
-import csv
 import os
-import difflib
-import random
 import glob
-import hashlib
-import shutil
 import fnmatch
 
-from collections import defaultdict
 
 
 def find_files(directory, exts):
@@ -25,5 +18,4 @@ def get_embeddings():
 
 def get_loras():
     return sorted(list(find_files(shared.cmd_opts.lora_dir, ['safetensors', 'ckpt','pt'])), key=str.casefold)
-
 
