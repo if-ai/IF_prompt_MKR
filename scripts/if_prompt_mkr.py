@@ -75,7 +75,7 @@ class Script(scripts.Script):
             'prompt_prefix': 'Style-SylvaMagic, ',
             'input_prompt': '(Dark elf empress:1.2), enchanted Forrest',
             'negative_prompt': '(Worst quality, Low quality:1.4), NSFW, ugly, ng_deepnegative_v1_75t, negative_hand-neg,',
-            'prompt_subfix': '(rim lighting,:1.1) two tone lighting, <lora:epiNoiseoffset_v2:0.8>',
+            'prompt_subfix': '(rim lighting,:1.1) two tone lighting, <lora:epiNoiseoffset_v2:0.8>,',
 
         }
         # lora and embedding dropdowns can access current user input
