@@ -13,7 +13,7 @@ Move the characters from the extension folder to your oobabooga Character Folder
 
 Discover More
 https://ko-fi.com/impactframes/shop
-
+<script type='text/javascript' src='https://storage.ko-fi.com/cdn/widget/Widget_2.js'></script><script type='text/javascript'>kofiwidget2.init('Support Me on Ko-fi', '#29abe0', 'O4O51R44U');kofiwidget2.draw();</script> 
 https://civitai.com/user/impactframes/models
 
 Here is an oveview
