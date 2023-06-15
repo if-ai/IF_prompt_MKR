@@ -4,12 +4,13 @@ import os
 import requests
 import json
 import re
-
-from modules import script_callbacks, shared
+import modules
+from modules import images, script_callbacks, shared
 from modules.processing import Processed, process_images
 from modules.shared import state
 from scripts.negfiles import get_negative
-from scripts.modeltags import get_loras, get_embeddings
+from scripts.modeltags import get_loras, get_embeddings, get_lora_trigger_words, get_embedding_trigger_words, get_trigger_files
+
 
 script_dir = scripts.basedir()
 #script_name = os.path.splitext(os.path.basename(__file__))[0] # I might use this later
@@ -39,43 +40,49 @@ def on_ui_settings():
     shared.opts.add_option("xrepetition_penalty", shared.OptionInfo(
       1.2, "Set the repetition penalty of the", gr.Slider, {"minimum": 0, "maximum": 2, "step": 0.1}, section=section
       ))
-      
+    
 
 script_callbacks.on_ui_settings(on_ui_settings)
-
-def get_character_list():
-    # Get character path from options
-    character_path = shared.opts.data.get("character_path", None)
-
-    # Check if the character path is not None and exists
-    if character_path and os.path.exists(character_path):
-        # Get list of all json files
-        return [os.path.splitext(f)[0] for f in os.listdir(character_path) if f.endswith('.json')]
-    else:
-        return []
 
 
 class Script(scripts.Script):
 
     def title(self):
         return "iF_prompt_MKR"
-
-
+    
+    
     def ui(self, is_img2img):
+        # Get character path from Oobabooga character Directory json defined on_ui_settings
+        def get_character_list():
+            # Get character path from options
+            character_path = shared.opts.data.get("character_path", None)
+            # Check if the character path is not None and exists
+            if character_path and os.path.exists(character_path):
+                # Get list of all json files
+                return [os.path.splitext(f)[0] for f in os.listdir(character_path) if f.endswith('.json')]
+            else:
+                return []
+            
+        # Get Negative prompts form folder negfiles   
         neg_prompts = get_negative(os.path.join(script_dir, "negfiles"))
 
+        # Assings The characters to the character list
         character_list = get_character_list()
 
+        # set initial params values
         params = {
             'selected_character': character_list if character_list else ['if_ai_SD', 'iF_Ai_SD_b', 'iF_Ai_SD_NSFW'],
             'prompt_prefix': 'Style-SylvaMagic, ',
             'input_prompt': '(Dark elf empress:1.2), enchanted Forrest',
             'negative_prompt': '(Worst quality, Low quality:1.4), NSFW, ugly, ng_deepnegative_v1_75t, negative_hand-neg,',
-            'prompt_subfix': '(rim lighting,:1.1) two tone lighting, <lora:epiNoiseoffset_v2:0.8>'
+            'prompt_subfix': '(rim lighting,:1.1) two tone lighting, <lora:epiNoiseoffset_v2:0.8>',
 
         }
+        # lora and embedding dropdowns can access current user input
+        prompt_prefix_value = params['prompt_prefix']
+        prompt_subfix_value = params['prompt_subfix']
 
-        
+        # Updates the neg_prompts dropdown
         def on_neg_prompts_change(x):
             
             filename = neg_prompts[x][1]
@@ -88,52 +95,119 @@ class Script(scripts.Script):
 
             return new_neg_prompt
         
-        with gr.Row():
-            input_prompt = gr.inputs.Textbox(lines=1, placeholder=params['input_prompt'], label="Input Prompt")
-            selected_character = gr.inputs.Dropdown(label="characters", choices=params['selected_character'])
+        # Adds loras to the subfix via dropdown
+        def on_apply_lora(lora_model):
+            if lora_model is None:
+                print("No LORA model selected.")
+                return
+
+            print("Applying LORA model...")
+            lora_name = lora_model
+            print(f"Selected LORA model: {lora_name}")
+            if lora_name:
+                trigger_words = get_lora_trigger_words(lora_name)
+                print(f"Success Trigger words for {lora_name}: {trigger_words}")
+
+                current_text = params["prompt_subfix"]
+                # Remove existing lora trigger words
+                #current_text = re.sub(r"<lora:[^>]+>", "", current_text)
+                current_text = re.sub(r"\{[^}]+\}", "", current_text)
+                lora, ext = os.path.splitext(lora_name)
+                new_prompt_subfix = f"{current_text} {trigger_words} <lora:{lora}:0.8>"
+                params['prompt_subfix'] = new_prompt_subfix
+                prompt_subfix.value = new_prompt_subfix
+
+
+                print(f"Updated prompt_subfix: {prompt_subfix.value}")
+
+            return new_prompt_subfix
         
+        # Adds embeddings to the prefix via dropdown        
+        def on_apply_embedding(embedding_model):
+            if embedding_model is None:
+                print("No embedding selected.")
+                return
+
+            print("Applying embedding model...")
+            
+            ti_name = embedding_model
+            print(f"Selected embedding: {ti_name}")
+            if ti_name:
+                trigger_words = get_embedding_trigger_words(ti_name)
+                print(f"Success Trigger words for {ti_name}: {trigger_words}")
+                    
+                current_text = params['prompt_prefix']
+                #Remove existing embedding trigger words
+                current_text = re.sub(r"\{[^}]+\}", "", current_text)
+                new_prompt_prefix = f"{current_text} {trigger_words}"
+                params['prompt_prefix'] = new_prompt_prefix
+                prompt_prefix.value = new_prompt_prefix
+                    
+                print(f"Updated prompt_prefix: {prompt_prefix.value}")
+
+            return new_prompt_prefix
+     
+        with gr.Row():
+            input_prompt = gr.Textbox(lines=1, placeholder=params['input_prompt'], label="Input Prompt", elem_id="iF_prompt_MKR_input_prompt")
+            selected_character = gr.inputs.Dropdown(label="characters", choices=params['selected_character'])       
         #The Idea is chosing and embeding and lora and will populate the keywords automatically 
         with gr.Accordion('Prefix & TIembeddings', open=True):
             ti_choices = ["None"]
             ti_choices.extend(get_embeddings())
             with gr.Row():
-                prompt_prefix = gr.inputs.Textbox(lines=1, placeholder=params['prompt_prefix'], label="Prompt Prefix")
-                embeddings_model = gr.inputs.Dropdown(label="Embeddings Model", choices=ti_choices)
+                prompt_prefix = gr.Textbox(lines=1, default=prompt_prefix_value, label="Prompt Prefix", elem_id="iF_prompt_MKR_prompt_prefix")
 
-        with gr.Accordion('Subfix & Loras', open=True):
+                with gr.Column():
+                    embedding_model = gr.inputs.Dropdown(label="Embeddings Model", choices=ti_choices, default='')
+
+        with gr.Accordion('Suffix & Loras', open=True):
             lora_choices = ["None"]
             lora_choices.extend(get_loras())
-            with gr.Row(equal_height=True):
-                prompt_subfix = gr.inputs.Textbox(lines=1, placeholder=params['prompt_subfix'], label="Subfix for adding Loras (optional)")
-                lora_model = gr.inputs.Dropdown(label="Lora Model", choices=lora_choices)
+            with gr.Row():
+                prompt_subfix = gr.Textbox(lines=1, default=prompt_subfix_value, label="Subfix for adding Loras (optional)", elem_id="iF_prompt_MKR_prompt_subfix")
 
+                with gr.Column():
+                    lora_model = gr.Dropdown(label="Lora Model", choices=lora_choices, default='None')
+                    
         with gr.Row():  
+            negative_prompt = gr.Textbox(lines=4, default=params['negative_prompt'], label="Negative Prompt", elem_id="iF_prompt_MKR_negative_prompt")
             neg_prompts_dropdown = gr.Dropdown(
                 label="neg_prompts", 
                 choices=[n[0] for n in neg_prompts],
                 type="index", 
                 elem_id="iF_prompt_MKR_neg_prompts_dropdown")
-            negative_prompt = gr.Textbox(lines=4, default=params['negative_prompt'], label="Negative Prompt") #, default_value=neg_prompts[0][1]
+             #, default_value=neg_prompts[0][1]
+
         with gr.Row():
-            excluded_words = gr.inputs.Textbox(lines=1, placeholder="Enter case-sensitive words to exclude, separated by commas", label="Excluded Words")
-        
-            #prompt_count = gr.Number(value=1, label="How many prompts you need")
-            #I plan to make a batch count option later for apending prompts and save them to a file, 
-            #the idea is to make variations of the same prompt, will be useful for livestreams
-        
+            with gr.Column():
+                excluded_words = gr.inputs.Textbox(lines=1, placeholder="Enter case-sensitive words to exclude, separated by commas", label="Excluded Words")
+                kofi_thx = gr.inputs.Textbox(lines=3, default="Img2Img Mode needs an image as Imput, it might fail without it | Make sure to finish with a coma (') your written inputs so it pravails when you update the dropdowns |  -`♡´- Thanks to all my supportes in Youtube and kofi @impactframes -`♡´- ", label="ImpactFrames Message")
+            with gr.Column():
+                get_triger_files = gr.Button("Get All Trigger Files", elem_id="iF_prompt_MKR_get_triger_files")
+                message = gr.inputs.Textbox(lines=2, default="Creates a file with all the trigger words for each model (takes 3-5 seconds for each model you have) if you already have .civitai.info in your model folder, then you don't need to run this", label="Trigger Message")
+                #prompt_count = gr.Number(value=1, label="How many prompts you need")
+                #I plan to make a batch count option later for apending prompts and save them to a file, 
+                #the idea is to make variations of the same prompt, will be useful for livestreams
+
         selected_character.change(lambda x: params.update({'selected_character': x}), selected_character, None)
         prompt_prefix.change(lambda x: params.update({'prompt_prefix': x}), prompt_prefix, None)
         input_prompt.change(lambda x: params.update({'input_prompt': x}), input_prompt, None)
         prompt_subfix.change(lambda x: params.update({'prompt_subfix': x}), prompt_subfix, None)
         
         excluded_words.change(lambda x: params.update({'excluded_words': [word.strip() for word in x.split(',')] if x else []}), excluded_words, None)
-        #prompt_count.change(lambda x: params.update({'prompt_count': x}), prompt_count, None)
+        get_triger_files.click(get_trigger_files, inputs=[], outputs=[message])
         
         neg_prompts_dropdown.change(on_neg_prompts_change, neg_prompts_dropdown, negative_prompt)
         negative_prompt.change(lambda x: params.update({'negative_prompt': x}), negative_prompt, None)
-        #lora_model.change(lambda x: params.update({'lora_model': x}), lora_model, None)
 
+        embedding_model.change(on_apply_embedding, inputs=[embedding_model], outputs=[prompt_prefix], )
+        print("Embedding Model value:", embedding_model.value)
+        lora_model.change(on_apply_lora, inputs=[lora_model], outputs=[prompt_subfix])
+        print("LORA Model value:", lora_model.value)
+        
         return [selected_character, prompt_prefix, input_prompt, prompt_subfix, excluded_words, negative_prompt]
+    
+    
 
     def run(self, p, selected_character ,prompt_prefix, input_prompt, prompt_subfix, excluded_words, negative_prompt, *args, **kwargs):
         generated_text = self.generate_text(selected_character, input_prompt, excluded_words)
@@ -211,11 +285,11 @@ class Script(scripts.Script):
                     if visible:
                         generated_text = visible[-1][1]
 
-                        # Remove words from excluded_words from generated_text
+                        # Remove words from excluded_words inside generated_text
                         if words:
                             generated_text = ' '.join(word for word in generated_text.split() if word not in words)
 
-                        # Remove audio tags from generated_text
+                        # Remove audio tags inside generated_text
                         if '<audio' in generated_text:
                             
                             print("Audio has been generated.")
