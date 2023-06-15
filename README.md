@@ -12,6 +12,7 @@ and in automatic --api
 Move the characters from the extension folder to your oobabooga Character Folder and place the script on extensions or install it from url inside A1111
 
 Discover More
+
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/O4O51R44U)
 
 https://civitai.com/user/impactframes/models
