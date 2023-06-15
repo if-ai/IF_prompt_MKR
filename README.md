@@ -25,4 +25,4 @@ You can use other characters apart from mine like EVAi_SDPromptEngineer
 https://ko-fi.com/s/d0dd3f3c8e
 https://www.youtube.com/watch?v=7W_mPpUx0F8&t=9s
 
-<img src="https://count.getloli.com/get/@:ifpromptmkr" alt=":name" />
+<img src="https://count.getloli.com/get/@:ifpromptmkr" ?theme="rule34" alt=":ifpromptmkr" />
