@@ -181,7 +181,7 @@ class Script(scripts.Script):
         with gr.Row():
             with gr.Column():
                 excluded_words = gr.inputs.Textbox(lines=1, placeholder="Enter case-sensitive words to exclude, separated by commas", label="Excluded Words")
-                kofi_thx = gr.inputs.Textbox(lines=4, default="Img2Img Mode needs an image as Imput, it might fail without it | Make sure to finish with a coma (') your written inputs so it pravails when you update the dropdowns |  -`♡´- Thanks to all my supportes in Youtube and kofi @impactframes -`♡´- Thanks to Revolved his suggestions helped me to improve this extension", label="ImpactFrames Message")
+                kofi_thx = gr.inputs.Textbox(lines=4, default="Img2Img Mode needs an image as Imput, it might fail without it | Make sure to finish with a coma (') your written inputs so it pravails when you update the dropdowns |", label="ImpactFrames Message")
             with gr.Column():
                 get_triger_files = gr.Button("Get All Trigger Files", elem_id="iF_prompt_MKR_get_triger_files")
                 message = gr.inputs.Textbox(lines=2, default="Creates a file with all the trigger words for each model (takes 3-5 seconds for each model you have) if you already have .civitai.info in your model folder, then you don't need to run this", label="Trigger Message")
