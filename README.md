@@ -21,8 +21,8 @@ https://civitai.com/user/impactframes/models
  
  -`♡´- Thanks to Revolved from Rundiffusion his suggestions helped me to improve this extension
 
-Here is an oveview
-[![iF_Prompt_MKR extension](http://img.youtube.com/vi/6_1rnOhtGeQ/0.jpg)](https://www.youtube.com/watch?v=6_1rnOhtGeQ "Link Title")
+
+[![Here is an oveview](http://img.youtube.com/vi/6_1rnOhtGeQ/0.jpg)](https://www.youtube.com/watch?v=6_1rnOhtGeQ "Link Title")
 
 
 here is the old version oveview
