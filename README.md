@@ -22,7 +22,7 @@ https://civitai.com/user/impactframes/models
  -`♡´- Thanks to Revolved from Rundiffusion his suggestions helped me to improve this extension
 
 Here is an oveview
-https://youtu.be/6_1rnOhtGeQ
+<iframe width="560" height="315" src="https://www.youtube.com/embed/6_1rnOhtGeQ" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
 
 here is the old version oveview
 https://youtu.be/_G6vPpf0F-g?t=105
