@@ -16,6 +16,8 @@ Discover More
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/O4O51R44U)
 
 https://civitai.com/user/impactframes/models
+ -`♡´- Thanks to all my supportes in Youtube and kofi @impactframes 
+ -`♡´- Thanks to Revolved from Rundiffusion his suggestions helped me to improve this extension
 
 Here is an oveview
 https://youtu.be/6_1rnOhtGeQ
