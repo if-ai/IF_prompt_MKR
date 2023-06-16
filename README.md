@@ -25,11 +25,6 @@ https://civitai.com/user/impactframes/models
 [![Here is an oveview](http://img.youtube.com/vi/6_1rnOhtGeQ/0.jpg)](https://www.youtube.com/watch?v=6_1rnOhtGeQ "Link Title")
 
 
-here is the old version oveview
-https://youtu.be/_G6vPpf0F-g?t=105
 
-You can use other characters apart from mine like EVAi_SDPromptEngineer  
-https://ko-fi.com/s/d0dd3f3c8e
-https://www.youtube.com/watch?v=7W_mPpUx0F8&t=9s
 
 <img src="https://count.getloli.com/get/@ifpromptmkr?theme=rule34" alt=":ifpromptmkr" />
