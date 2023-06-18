@@ -22,7 +22,8 @@ https://civitai.com/user/impactframes/models
  -`♡´- Thanks to Revolved from Rundiffusion his suggestions helped me to improve this extension
 
 
-[![Here is an oveview](http://img.youtube.com/vi/6_1rnOhtGeQ/0.jpg)](https://www.youtube.com/watch?v=6_1rnOhtGeQ "Link Title")
+[![YouTube Video](https://img.youtube.com/vi/Y1E_y7ZrX5w/0.jpg)](https://youtu.be/Y1E_y7ZrX5w)
+
 
 
 
