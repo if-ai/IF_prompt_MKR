@@ -5,6 +5,7 @@ import requests
 import json
 import re
 import modules
+import unicodedata
 from modules import images, script_callbacks, shared
 from modules.processing import Processed, process_images
 from modules.shared import state
@@ -40,9 +41,15 @@ def on_ui_settings():
     shared.opts.add_option("xrepetition_penalty", shared.OptionInfo(
       1.2, "Set the repetition penalty of the", gr.Slider, {"minimum": 0, "maximum": 2, "step": 0.1}, section=section
       ))
+    shared.opts.add_option("custom_embedding_path", shared.OptionInfo(
+      "", "Select optional embedding Path", section=section))
+    shared.opts.add_option("custom_lora_path", shared.OptionInfo(
+      "", "Select optional lora Path", section=section))
     
 
 script_callbacks.on_ui_settings(on_ui_settings)
+
+
 
 
 class Script(scripts.Script):
@@ -72,10 +79,12 @@ class Script(scripts.Script):
         # set initial params values
         params = {
             'selected_character': character_list if character_list else ['if_ai_SD', 'iF_Ai_SD_b', 'iF_Ai_SD_NSFW'],
-            'prompt_prefix': 'Style-SylvaMagic, ',
-            'input_prompt': '(Dark elf empress:1.2), enchanted Forrest',
-            'negative_prompt': '(Worst quality, Low quality:1.4), NSFW, ugly, ng_deepnegative_v1_75t, negative_hand-neg,',
-            'prompt_subfix': '(rim lighting,:1.1) two tone lighting, <lora:epiNoiseoffset_v2:0.8>,',
+            'prompt_prefix': '((style-swirlmagic):0.35),',
+            'input_prompt': '(CatGirl warrior:1.2), legendary sword,',
+            'negative_prompt': '(nsfw), (worst quality, low quality:1.4), ((text, signature, captions):1.3),',
+            'prompt_subfix': 'dark theme <lora:LowRA:0.6>, add_detail <lora:add_detail:0.6>,',
+            'batch_size': 1,
+            'batch_count': 1,
 
         }
         # lora and embedding dropdowns can access current user input
@@ -147,26 +156,32 @@ class Script(scripts.Script):
 
             return new_prompt_prefix
      
-        with gr.Row():
+        with gr.Row(scale=1, min_width=400):
             input_prompt = gr.Textbox(lines=1, placeholder=params['input_prompt'], label="Input Prompt", elem_id="iF_prompt_MKR_input_prompt")
-            selected_character = gr.inputs.Dropdown(label="characters", choices=params['selected_character'])       
+            with gr.Column(scale=1, min_width=100):
+                use_batch = gr.Checkbox(value=False, label='Use batch')
+                with gr.Row():
+                    batch_count = gr.Number(label="Batch count:", value=params['batch_count'])
+                    batch_size = gr.Slider(1, 6, value=params['batch_size'], step=1, label='batch size')
+                        
+                selected_character = gr.inputs.Dropdown(label="characters", choices=params['selected_character'])       
         #The Idea is chosing and embeding and lora and will populate the keywords automatically 
         with gr.Accordion('Prefix & TIembeddings', open=True):
             ti_choices = ["None"]
             ti_choices.extend(get_embeddings())
-            with gr.Row():
+            with gr.Row(scale=1, min_width=400):
                 prompt_prefix = gr.Textbox(lines=1, default=prompt_prefix_value, label="Prompt Prefix", elem_id="iF_prompt_MKR_prompt_prefix")
 
-                with gr.Column():
+                with gr.Column(scale=1, min_width=100):
                     embedding_model = gr.inputs.Dropdown(label="Embeddings Model", choices=ti_choices, default='')
 
         with gr.Accordion('Suffix & Loras', open=True):
             lora_choices = ["None"]
             lora_choices.extend(get_loras())
-            with gr.Row():
+            with gr.Row(scale=1, min_width=400):
                 prompt_subfix = gr.Textbox(lines=1, default=prompt_subfix_value, label="Subfix for adding Loras (optional)", elem_id="iF_prompt_MKR_prompt_subfix")
 
-                with gr.Column():
+                with gr.Column(scale=1, min_width=100):
                     lora_model = gr.Dropdown(label="Lora Model", choices=lora_choices, default='None')
                     
         with gr.Row():  
@@ -179,21 +194,22 @@ class Script(scripts.Script):
              #, default_value=neg_prompts[0][1]
 
         with gr.Row():
-            with gr.Column():
+            with gr.Column(scale=1, min_width=400):
                 excluded_words = gr.inputs.Textbox(lines=1, placeholder="Enter case-sensitive words to exclude, separated by commas", label="Excluded Words")
                 kofi_thx = gr.inputs.Textbox(lines=4, default="Img2Img Mode needs an image as Imput, it might fail without it | Make sure to finish with a coma (') your written inputs so it pravails when you update the dropdowns |", label="ImpactFrames Message")
-            with gr.Column():
+            with gr.Column(scale=1, min_width=100):
                 get_triger_files = gr.Button("Get All Trigger Files", elem_id="iF_prompt_MKR_get_triger_files")
                 message = gr.inputs.Textbox(lines=2, default="Creates a file with all the trigger words for each model (takes 3-5 seconds for each model you have) if you already have .civitai.info in your model folder, then you don't need to run this", label="Trigger Message")
-                #prompt_count = gr.Number(value=1, label="How many prompts you need")
-                #I plan to make a batch count option later for apending prompts and save them to a file, 
-                #the idea is to make variations of the same prompt, will be useful for livestreams
+                
 
+        use_batch.change(lambda x: params.update({'use_batch': x}), use_batch, None)
         selected_character.change(lambda x: params.update({'selected_character': x}), selected_character, None)
         prompt_prefix.change(lambda x: params.update({'prompt_prefix': x}), prompt_prefix, None)
         input_prompt.change(lambda x: params.update({'input_prompt': x}), input_prompt, None)
         prompt_subfix.change(lambda x: params.update({'prompt_subfix': x}), prompt_subfix, None)
-        
+        batch_count.change(lambda x: params.update({"batch_count": x}), batch_count, None)
+        batch_size.change(lambda x: params.update({'batch_size': x}), batch_size, None)
+
         excluded_words.change(lambda x: params.update({'excluded_words': [word.strip() for word in x.split(',')] if x else []}), excluded_words, None)
         get_triger_files.click(get_trigger_files, inputs=[], outputs=[message])
         
@@ -205,26 +221,13 @@ class Script(scripts.Script):
         lora_model.change(on_apply_lora, inputs=[lora_model], outputs=[prompt_subfix])
         print("LORA Model value:", lora_model.value)
         
-        return [selected_character, prompt_prefix, input_prompt, prompt_subfix, excluded_words, negative_prompt]
+        return [selected_character, prompt_prefix, input_prompt, prompt_subfix, excluded_words, negative_prompt, use_batch, batch_size, batch_count]
     
-    
-
-    def run(self, p, selected_character ,prompt_prefix, input_prompt, prompt_subfix, excluded_words, negative_prompt, *args, **kwargs):
-        generated_text = self.generate_text(selected_character, input_prompt, excluded_words)
-        combined_prompt = prompt_prefix + ' ' + generated_text + ' ' + prompt_subfix
-        p.prompt = combined_prompt
-        p.negative_prompt = negative_prompt
-        p.prompt_subfix = prompt_subfix
-        p.selected_character = selected_character
-        p.input_prompt = input_prompt
-        p.generate_text = generated_text
-        return process_images(p)
- 
 
   
-    def generate_text(self, character, prompt, words):
+    def generate_text(self, character, prompt, words, use_batch, batch_size, batch_count):
+        generated_texts = []
 
-        print("Generating text...")
         stopping = shared.opts.data.get("stopping_string", None)
         if not stopping:
             stopping = "### Assistant:"
@@ -234,11 +237,10 @@ class Script(scripts.Script):
         xtop_p = shared.opts.data.get("xtop_p", 0.9)
         xtypical_p = shared.opts.data.get("xtypical_p", 0.9)
         xrepetition_penalty = shared.opts.data.get("xrepetition_penalty", 1.2)
-        
 
         data = {
             'user_input': prompt,
-            'history': {'internal': [], 'visible': []}, #this is the history of the chat, it's not used here but it's needed for the chat to work
+            'history': {'internal': [], 'visible': []},  # this is the history of the chat, it's not used here but it's needed for the chat to work
             'mode': "chat",
             'character': character,
             'instruction_template': 'Wizard-Mega',
@@ -247,7 +249,7 @@ class Script(scripts.Script):
             'stop_at_newline': False,
             'chat_prompt_size': 2048,
             'chat_generation_attempts': 1,
-            'chat-instruct_command': 'Continue the chat dialogue below. Write a single reply for the character "<|character|>".\n\n<|prompt|>',
+            'chat-instruct_command': 'Continue the chat dialogue below. Write a single reply for the character "".\n\n',
             'max_new_tokens': xtokens,
             'temperature': xtemperature,
             'top_k': xtop_k,
@@ -267,46 +269,134 @@ class Script(scripts.Script):
             'custom_stopping_strings': [stopping,],
             'truncation_length': 2048,
             'ban_eos_token': False,
-        }  
-        headers = {     
-            "Content-Type": "application/json" 
-        } 
+        }
+        headers = {
+            "Content-Type": "application/json"
+        }
 
-        response = requests.post("http://127.0.0.1:5000/api/v1/chat",
-                         data=json.dumps(data), headers=headers)
+        if use_batch:
+            for i in range(batch_count):
+                for i in range(batch_size):
+                    response = requests.post("http://127.0.0.1:5000/api/v1/chat",
+                                            data=json.dumps(data), headers=headers)
 
-        if response.status_code == 200:
-            print(response.content)
-            results = json.loads(response.content)['results']
-            if results:
-                history = results[0]['history']
-                if history:
-                    visible = history['visible']
-                    if visible:
-                        generated_text = visible[-1][1]
+                    if response.status_code == 200:
+                        results = json.loads(response.content)['results']
+                        if results:
+                            history = results[0]['history']
+                            if history:
+                                visible = history['visible']
+                                if visible:
+                                    generated_text = visible[-1][1]
 
-                        # Remove words from excluded_words inside generated_text
-                        if words:
-                            generated_text = ' '.join(word for word in generated_text.split() if word not in words)
+                                    if words:
+                                        generated_text = ' '.join(word for word in generated_text.split() if word not in words)
 
-                        # Remove audio tags inside generated_text
-                        if '<audio' in generated_text:
-                            
-                            print("Audio has been generated.")
+                                    if '<audio' in generated_text:
+                                        print("Audio has been generated.")
+                                        generated_text = re.sub(r'<audio.*?>.*?</audio>', '', generated_text)
 
-                            generated_text = re.sub(r'<audio.*?>.*?</audio>', '', generated_text)
-
-                        return generated_text
-            else:
-                print("No results found.")
+                                    generated_texts.append(generated_text)
+                        else:
+                            print("No results found.")
+                    else:
+                        print("Error: Request failed with status code, probably Ooga isn't running with API flags check the readme",
+                            response.status_code)
         else:
-            print("Error: Request failed with status code, probably Ooga isn't running with API flags check the readme", response.status_code)
+            response = requests.post("http://127.0.0.1:5000/api/v1/chat",
+                                    data=json.dumps(data), headers=headers)
+
+            if response.status_code == 200:
+                results = json.loads(response.content)['results']
+                if results:
+                    history = results[0]['history']
+                    if history:
+                        visible = history['visible']
+                        if visible:
+                            generated_text = visible[-1][1]
+
+                            if words:
+                                generated_text = ' '.join(word for word in generated_text.split() if word not in words)
+
+                            if '<audio' in generated_text:
+                                print("Audio has been generated.")
+                                generated_text = re.sub(r'<audio.*?>.*?</audio>', '', generated_text)
+
+                            generated_texts.append(generated_text)
+                else:
+                    print("No results found.")
+            else:
+                print("Error: Request failed with status code, probably Ooga isn't running with API flags check the readme",
+                    response.status_code)
+
+        return generated_texts
+
+
+    
+    def run(self, p, selected_character, prompt_prefix, input_prompt, prompt_subfix, excluded_words, negative_prompt, use_batch, batch_size, batch_count, *args, **kwargs):
+        prompts = []
+        batch_count = int(batch_count)
+        batch_size = int(batch_size)
+
+        generated_texts = self.generate_text(selected_character, input_prompt, excluded_words, use_batch, batch_size, batch_count)
+        
+        if not generated_texts:
+            print("No text generated.")
+            return
+        for text in generated_texts:
+            combined_prompt = prompt_prefix + ' ' + text + ' ' + prompt_subfix
+            prompts.append(combined_prompt)
+
+        p.negative_prompt = negative_prompt
+        p.prompt_subfix = prompt_subfix
+        p.selected_character = selected_character
+        p.input_prompt = input_prompt
+        
+        modules.processing.fix_seed(p)
+        
+        p.do_not_save_grid = True
+        state.job_count = 0
+        permutations = 0
+        
+        state.job_count += len(prompts) * batch_count
+        permutations += len(prompts)
+            
+        print(f"Creating {permutations} image permutations")
+        image_results = []
+        all_prompts = []
+        infotexts = []
+        current_seed = p.seed
 
         
-    def process_images(self, p):
-        state.job_count = 0
-        state.job_count += p.n_iter
+        if len(prompts) == 1 and not use_batch:
+            p.prompt = prompts[0]
+            for i in range(batch_count * batch_size):
+                p.seed = current_seed
+                current_seed += 1
 
-        proc = process_images(p)
+                proc = process_images(p)
+                temp_grid = images.image_grid(proc.images, batch_size)
+                image_results.append(temp_grid)
 
-        return Processed(p, [proc.images[0]], p.seed, "", all_prompts=proc.all_prompts, infotexts=proc.infotexts)
+                all_prompts += proc.all_prompts
+                infotexts += proc.infotexts
+        else:
+            for prompt in prompts:
+                p.prompt = prompt
+                p.seed = current_seed
+                current_seed += 1
+
+                proc = process_images(p)
+                temp_grid = images.image_grid(proc.images, batch_size)
+                image_results.append(temp_grid)
+
+                all_prompts += proc.all_prompts
+                infotexts += proc.infotexts
+
+        if len(prompts) > 1:
+            grid = images.image_grid(image_results, batch_size)
+            infotexts.insert(0, infotexts[0])
+            image_results.insert(0, grid)
+            images.save_image(grid, p.outpath_grids, "grid", grid=True, p=p)
+
+        return Processed(p, image_results, p.seed, "", all_prompts=all_prompts, infotexts=infotexts)
