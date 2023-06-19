@@ -41,14 +41,9 @@ def on_ui_settings():
     shared.opts.add_option("xrepetition_penalty", shared.OptionInfo(
       1.2, "Set the repetition penalty of the", gr.Slider, {"minimum": 0, "maximum": 2, "step": 0.1}, section=section
       ))
-    shared.opts.add_option("custom_embedding_path", shared.OptionInfo(
-      "", "Select optional embedding Path", section=section))
-    shared.opts.add_option("custom_lora_path", shared.OptionInfo(
-      "", "Select optional lora Path", section=section))
     
 
 script_callbacks.on_ui_settings(on_ui_settings)
-
 
 
 
@@ -356,12 +351,12 @@ class Script(scripts.Script):
         
         p.do_not_save_grid = True
         state.job_count = 0
-        permutations = 0
+        generations = 0
         
         state.job_count += len(prompts) * batch_count
-        permutations += len(prompts)
+        generations += len(prompts)
             
-        print(f"Creating {permutations} image permutations")
+        print(f"Processing {generations} image generations")
         image_results = []
         all_prompts = []
         infotexts = []
