@@ -1,13 +1,15 @@
 # IF_prompt_MKR
 An A1111 extension to let the AI make prompts for SD using Oobabooga
+I am using Llama GPTQ mode exllama adds tokens so my characters don't work with it if you want to use exLlama use the revAi prompt engineer character mine only work with the previous mode for now
 
-comment out line 164 of webui.py on the text generation webui    
-and add this remove the arguments you don't need 
-I am using Llama GPTQ mode
+webui.py has CMD
+
 CMD_FLAGS
---model-menu --model Wizard-Vicuna-13B-Uncensored-GPTQ --model_type llama --wbits 4 --groupsize 128 --chat --no-stream api --listen-port 7861 --listen "
+--model-menu --model Wizard-Vicuna-13B-Uncensored-GPTQ --model_type llama --wbits 4 --groupsize 128 --chat --no-stream api --listen-port 7861 --listen
 
-you need api --listen-port 7861 --listen
+you need 
+api --listen-port 7861 --listen
+On Oobabooga 
 and in automatic --api
 
 Move the characters from the extension folder to your oobabooga Character Folder and place the script on extensions or install it from url inside A1111
