@@ -3,8 +3,9 @@ An A1111 extension to let the AI make prompts for SD using Oobabooga
 
 comment out line 164 of webui.py on the text generation webui    
 and add this remove the arguments you don't need 
-this are my settings 
-run_cmd("python server.py --model-menu --model Wizard-Vicuna-13B-Uncensored-GPTQ --model_type llama --wbits 4 --groupsize 128 --chat --no-stream --xformers api --listen-port 7861 --listen ", environment=True)
+I am using Llama GPTQ mode
+CMD_FLAGS
+--model-menu --model Wizard-Vicuna-13B-Uncensored-GPTQ --model_type llama --wbits 4 --groupsize 128 --chat --no-stream api --listen-port 7861 --listen "
 
 you need api --listen-port 7861 --listen
 and in automatic --api
