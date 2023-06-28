@@ -456,3 +456,5 @@ class Script(scripts.Script):
         
 
         return Processed(p, image_results, p.seed, "", all_prompts=all_prompts, infotexts=infotexts)
+
+
