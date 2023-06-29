@@ -1,6 +1,6 @@
 # IF_prompt_MKR
 An A1111 extension to let the AI make prompts for SD using Oobabooga
-I am using Llama GPTQ mode exllama adds tokens so my characters don't work with it if you want to use exLlama use the revAi prompt engineer character mine only work with the previous mode for now
+characters work on exllama with superHOT now
 
 webui.py has CMD
 
