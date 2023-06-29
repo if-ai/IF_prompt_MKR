@@ -3,6 +3,7 @@ import gradio as gr
 import os
 import requests
 import json
+import copy
 import re
 import modules
 import unicodedata
@@ -14,7 +15,6 @@ from scripts.modeltags import get_loras, get_embeddings, get_lora_trigger_words,
 
 
 script_dir = scripts.basedir()
-#script_name = os.path.splitext(os.path.basename(__file__))[0] # I might use this later
 
 
 def on_ui_settings():
@@ -54,39 +54,37 @@ class Script(scripts.Script):
     
     
     def ui(self, is_img2img):
-        # Get character path from Oobabooga character Directory json defined on_ui_settings
         def get_character_list():
-            # Get character path from options
             character_path = shared.opts.data.get("character_path", None)
-            # Check if the character path is not None and exists
             if character_path and os.path.exists(character_path):
-                # Get list of all json files
                 return [os.path.splitext(f)[0] for f in os.listdir(character_path) if f.endswith('.json')]
             else:
                 return []
             
-        # Get Negative prompts form folder negfiles   
+
         neg_prompts = get_negative(os.path.join(script_dir, "negfiles"))
 
-        # Assings The characters to the character list
+
         character_list = get_character_list()
 
-        # set initial params values
+
         params = {
             'selected_character': character_list if character_list else ['if_ai_SD', 'iF_Ai_SD_b', 'iF_Ai_SD_NSFW'],
-            'prompt_prefix': '((style-swirlmagic):0.35),',
+            'prompt_prefix': '',
             'input_prompt': '(CatGirl warrior:1.2), legendary sword,',
             'negative_prompt': '(nsfw), (worst quality, low quality:1.4), ((text, signature, captions):1.3),',
             'prompt_subfix': 'dark theme <lora:LowRA:0.6>, add_detail <lora:add_detail:0.6>,',
+            'prompt_per_batch': False,
+            'prompt_per_image': False,
             'batch_size': 1,
             'batch_count': 1,
 
         }
-        # lora and embedding dropdowns can access current user input
+
         prompt_prefix_value = params['prompt_prefix']
         prompt_subfix_value = params['prompt_subfix']
 
-        # Updates the neg_prompts dropdown
+        
         def on_neg_prompts_change(x):
             
             filename = neg_prompts[x][1]
@@ -99,7 +97,7 @@ class Script(scripts.Script):
 
             return new_neg_prompt
         
-        # Adds loras to the subfix via dropdown
+
         def on_apply_lora(lora_model):
             if lora_model is None:
                 print("No LORA model selected.")
@@ -113,8 +111,6 @@ class Script(scripts.Script):
                 print(f"Success Trigger words for {lora_name}: {trigger_words}")
 
                 current_text = params["prompt_subfix"]
-                # Remove existing lora trigger words
-                #current_text = re.sub(r"<lora:[^>]+>", "", current_text)
                 current_text = re.sub(r"\{[^}]+\}", "", current_text)
                 lora, ext = os.path.splitext(lora_name)
                 new_prompt_subfix = f"{current_text} {trigger_words} <lora:{lora}:0.8>"
@@ -125,8 +121,8 @@ class Script(scripts.Script):
                 print(f"Updated prompt_subfix: {prompt_subfix.value}")
 
             return new_prompt_subfix
-        
-        # Adds embeddings to the prefix via dropdown        
+
+
         def on_apply_embedding(embedding_model):
             if embedding_model is None:
                 print("No embedding selected.")
@@ -141,7 +137,6 @@ class Script(scripts.Script):
                 print(f"Success Trigger words for {ti_name}: {trigger_words}")
                     
                 current_text = params['prompt_prefix']
-                #Remove existing embedding trigger words
                 current_text = re.sub(r"\{[^}]+\}", "", current_text)
                 new_prompt_prefix = f"{current_text} {trigger_words}"
                 params['prompt_prefix'] = new_prompt_prefix
@@ -150,26 +145,24 @@ class Script(scripts.Script):
                 print(f"Updated prompt_prefix: {prompt_prefix.value}")
 
             return new_prompt_prefix
+        
+
      
         with gr.Row(scale=1, min_width=400):
             selected_character = gr.inputs.Dropdown(label="characters", choices=params['selected_character']) 
             with gr.Row():
-                prompt_per_image = gr.Checkbox(value=False, label='prompt per image')
-                prompt_per_batch = gr.Checkbox(value=False, label='prompt per batch')
-                Automatic = gr.Checkbox(value=False, label='Control Automatic Batch')
+                prompt_mode = gr.inputs.Radio(['Default', 'Per Image', 'Per Batch'], label='Prompt Mode')
         with gr.Row(scale=1, min_width=400):
             input_prompt = gr.Textbox(lines=1, placeholder=params['input_prompt'], label="Input Prompt", elem_id="iF_prompt_MKR_input_prompt")      
             with gr.Row():
                 batch_count = gr.Number(label="Batch count:", value=params['batch_count'])
                 batch_size = gr.Slider(1, 8, value=params['batch_size'], step=1, label='batch size')
-                        
-                    
          
         with gr.Accordion('Prefix & TIembeddings', open=True):
             ti_choices = ["None"]
             ti_choices.extend(get_embeddings())
             with gr.Row(scale=1, min_width=400):
-                prompt_prefix = gr.Textbox(lines=1, default=prompt_prefix_value, label="Prompt Prefix", elem_id="iF_prompt_MKR_prompt_prefix")
+                prompt_prefix = gr.Textbox(lines=1, default=prompt_prefix_value, label="Prefix or embeddigs (optonal)", elem_id="iF_prompt_MKR_prompt_prefix")
 
                 with gr.Column(scale=1, min_width=100):
                     embedding_model = gr.inputs.Dropdown(label="Embeddings Model", choices=ti_choices, default='')
@@ -178,7 +171,7 @@ class Script(scripts.Script):
             lora_choices = ["None"]
             lora_choices.extend(get_loras())
             with gr.Row(scale=1, min_width=400):
-                prompt_subfix = gr.Textbox(lines=1, default=prompt_subfix_value, label="Subfix for adding Loras (optional)", elem_id="iF_prompt_MKR_prompt_subfix")
+                prompt_subfix = gr.Textbox(lines=1, default=prompt_subfix_value, label="Suffix or Loras (optional)", elem_id="iF_prompt_MKR_prompt_subfix")
 
                 with gr.Column(scale=1, min_width=100):
                     lora_model = gr.Dropdown(label="Lora Model", choices=lora_choices, default='None')
@@ -190,27 +183,22 @@ class Script(scripts.Script):
                 choices=[n[0] for n in neg_prompts],
                 type="index", 
                 elem_id="iF_prompt_MKR_neg_prompts_dropdown")
-             #, default_value=neg_prompts[0][1]
+             
 
         with gr.Row():
             with gr.Column(scale=1, min_width=400):
                 excluded_words = gr.inputs.Textbox(lines=1, placeholder="Enter case-sensitive words to exclude, separated by commas", label="Excluded Words")
-                #kofi_thx = gr.inputs.Textbox(lines=4, default="Img2Img Mode needs an image as Imput, it might fail without it | Make sure to finish with a coma (') your written inputs so it pravails when you update the dropdowns |", label="ImpactFrames Message")
             with gr.Column(scale=1, min_width=100):
                 get_triger_files = gr.Button("Get All Trigger Files", elem_id="iF_prompt_MKR_get_triger_files")
                 message = gr.inputs.Textbox(lines=2, default="Creates a file with all the trigger words for each model (takes 3-5 seconds for each model you have) if you already have .civitai.info in your model folder, then you don't need to run this", label="Trigger Message")
                 
 
-        prompt_per_image.change(lambda x: params.update({'prompt_per_image': x}), prompt_per_image, None)
-        prompt_per_batch.change(lambda x: params.update({'prompt_per_batch': x}), prompt_per_batch, None)
-        Automatic.change(lambda x: params.update({'Automatic': x}), Automatic, None)
         selected_character.change(lambda x: params.update({'selected_character': x}), selected_character, None)
         prompt_prefix.change(lambda x: params.update({'prompt_prefix': x}), prompt_prefix, None)
         input_prompt.change(lambda x: params.update({'input_prompt': x}), input_prompt, None)
         prompt_subfix.change(lambda x: params.update({'prompt_subfix': x}), prompt_subfix, None)
         batch_count.change(lambda x: params.update({"batch_count": x}), batch_count, None)
         batch_size.change(lambda x: params.update({'batch_size': x}), batch_size, None)
-
         excluded_words.change(lambda x: params.update({'excluded_words': [word.strip() for word in x.split(',')] if x else []}), excluded_words, None)
         get_triger_files.click(get_trigger_files, inputs=[], outputs=[message])
         
@@ -222,33 +210,8 @@ class Script(scripts.Script):
         lora_model.change(on_apply_lora, inputs=[lora_model], outputs=[prompt_subfix])
         print("LORA Model value:", lora_model.value)
         
-        return [selected_character, prompt_prefix, input_prompt, prompt_subfix, excluded_words, negative_prompt, prompt_per_image, prompt_per_batch, batch_size, batch_count, Automatic]
+        return [selected_character, prompt_prefix, input_prompt, prompt_subfix, excluded_words, negative_prompt, prompt_mode, batch_count, batch_size]
     
-
-    def run(self, p, selected_character, prompt_prefix, input_prompt, prompt_subfix, excluded_words, negative_prompt, prompt_per_image, prompt_per_batch, batch_size, batch_count, Automatic, *args, **kwargs):
-        prompts = []
-        batch_count = int(batch_count)
-        batch_size = int(batch_size)
-
-        generated_texts = self.generate_text(selected_character, input_prompt, excluded_words, prompt_per_image, prompt_per_batch, batch_size, batch_count)
-        
-        if not generated_texts:
-            print(f"iF_prompt_MKR: No generated texts found for {selected_character}. check oobabooga is running on API mode and the character is available on Oogas character folder.")
-            return
-        for text in generated_texts:
-            combined_prompt = prompt_prefix + ' ' + text + ' ' + prompt_subfix
-            prompts.append(combined_prompt)
- 
-
-        p.prompts = prompts
-        p.negative_prompt = negative_prompt
-        p.prompt_subfix = prompt_subfix
-        p.selected_character = selected_character
-        p.input_prompt = input_prompt
-        return self.process_images(p, prompt_per_image, prompt_per_batch, batch_count, batch_size, Automatic)
-
-        
-
 
     def send_request(self, data, headers):
         response = requests.post("http://127.0.0.1:5000/api/v1/chat", data=json.dumps(data), headers=headers)
@@ -283,10 +246,10 @@ class Script(scripts.Script):
         return generated_text
     
 
-    def generate_text(self, character, prompt, words, prompt_per_image, prompt_per_batch, batch_size, batch_count):
+    def generate_text(self, p, character, prompt, words, prompt_per_image, prompt_per_batch, default_mode, batch_count, batch_size):
         generated_texts = []
 
-        print(f"iF_prompt_MKR: Generating a text prompt using:{character}")
+        print(f"iF_prompt_MKR: Generating a text prompt using: {character}")
         stopping = shared.opts.data.get("stopping_string", None)
         if not stopping:
             stopping = "### Assistant:"
@@ -299,7 +262,7 @@ class Script(scripts.Script):
 
         data = {
             'user_input': prompt,
-            'history': {'internal': [], 'visible': []},  # this is the history of the chat, it's not used here but it's needed for the chat to work
+            'history': {'internal': [], 'visible': []},
             'mode': "chat",
             'character': character,
             'instruction_template': 'Wizard-Mega',
@@ -334,20 +297,18 @@ class Script(scripts.Script):
         }
 
         if prompt_per_image:
-            for i in range(batch_count * batch_size):
+            for i in range( batch_count * batch_size):
                 generated_text = self.send_request(data, headers)
                 if generated_text:
                     processed_text = self.process_text(generated_text, words)
                     generated_texts.append(processed_text)
-
         elif prompt_per_batch:
-            for i in range(batch_count):
+            for i in range( batch_count):
                 generated_text = self.send_request(data, headers)
                 if generated_text:
                     processed_text = self.process_text(generated_text, words)
                     generated_texts.append(processed_text)
-
-        else:
+        elif default_mode:
             generated_text = self.send_request(data, headers)
             if generated_text:
                 processed_text = self.process_text(generated_text, words)
@@ -356,37 +317,56 @@ class Script(scripts.Script):
         return generated_texts
 
 
+    def run(self, p, selected_character, prompt_prefix, input_prompt, prompt_subfix, excluded_words, negative_prompt, prompt_mode, batch_count, batch_size, *args, **kwargs):
+        prompts = []
+        prompt_per_image = (prompt_mode == 'Per Image')
+        prompt_per_batch = (prompt_mode == 'Per Batch')
+        default_mode = (prompt_mode == 'Default')
+        batch_count = int(batch_count)
+        batch_size = int(batch_size)    
 
-    def process_images(self, p, prompt_per_image, prompt_per_batch, batch_count, batch_size, Automatic):
+        generated_texts = self.generate_text(p, selected_character, input_prompt, excluded_words, prompt_per_image, prompt_per_batch, default_mode, batch_count, batch_size)
+
+        if not generated_texts:
+            print(f"iF_prompt_MKR: No generated texts found for {selected_character}. Check if Oobabooga is running in API mode and the character is available in Oobabooga's character folder.")
+            return
+
+        for text in generated_texts:
+            combined_prompt = prompt_prefix + ' ' + text + ' ' + prompt_subfix
+            prompts.append(combined_prompt)
+
+        p.prompts = prompts
+        p.negative_prompt = negative_prompt
+        p.prompt_subfix = prompt_subfix
+        p.selected_character = selected_character
+        p.input_prompt = input_prompt
+
+
+        return self.process_images(p, prompt_per_image, prompt_per_batch, default_mode, batch_count, batch_size)
+
+
+    def process_images(self, p, prompt_per_image, prompt_per_batch, default_mode, batch_count, batch_size):
         modules.processing.fix_seed(p)
-        
-        if Automatic:
-            p.n_iter = batch_count
-            p.batch_size = batch_size
-            
-        
+
         p.do_not_save_grid = True
         state.job_count = 0
         generations = 0
-
-        if prompt_per_image:
-            state.job_count += len(p.prompts) * batch_count
-
-        elif batch_size > 1 and prompt_per_batch:
-            state.job_count += len(p.prompts) * batch_count
-
-        else:
-            state.job_count += batch_count
         
         
-        image_results = []
-        all_prompts = []
-        infotexts = []
-        current_seed = p.seed
-        
-                
-        if not prompt_per_image and not prompt_per_batch:
+        generations += len(p.prompts)
             
+        print(f"Creating {generations} image generations")
+
+        imges_p = []
+        all_prompts = []
+        infotexts = [] 
+        current_seed = p.seed
+
+
+        if default_mode:
+            p.n_iter = batch_count
+            p.batch_size = batch_size
+            state.job_count += len(p.prompts) * p.n_iter
             image_count = p.batch_size * p.n_iter
             generations += image_count
             print(f"iF_prompt_MKR: Processing {generations} image generations will have the same prompt")
@@ -394,42 +374,35 @@ class Script(scripts.Script):
             p.seed = current_seed
             current_seed += 1
                 
-            proc = process_images(p)
-            
-                
+            proc = process_images(p)    
             for img in proc.images:
-                image_results.append(img)
+                imges_p.append(img)
 
             all_prompts += proc.all_prompts
             infotexts += proc.infotexts
                 
-                
-        
-
 
         elif prompt_per_batch:
+            state.job_count += len(p.prompts) * batch_count
             generations += batch_size
             print(f"iF_prompt_MKR: Processing {batch_count} batches of {generations} image generations")
             for prompt in p.prompts:
                 p.prompt = prompt
-                
-                
                 for i in range(batch_size):
                     p.seed = current_seed
                     current_seed += 1
                     
                     proc = process_images(p)
-                    
-                    temp_grid = images.image_grid(proc.images, batch_size)
-                    image_results.append(temp_grid)
+                    tmp_grid = images.image_grid(proc.images, batch_size)
+                    imges_p.append(tmp_grid)
 
-                    
 
                     all_prompts += proc.all_prompts
                     infotexts += proc.infotexts  
                            
 
         elif prompt_per_image:
+            state.job_count += len(p.prompts) * batch_count
             generations += len(p.prompts)
             print(f"iF_prompt_MKR: Processing {generations} image generations will different prompts")
             for prompt in p.prompts:
@@ -438,9 +411,8 @@ class Script(scripts.Script):
                 current_seed += 1
 
                 proc = process_images(p)
-                temp_grid = images.image_grid(proc.images, batch_size)
-                image_results.append(temp_grid)
-                
+                tmp_grid = images.image_grid(proc.images, batch_size)
+                imges_p.append(tmp_grid)
                 
 
                 all_prompts += proc.all_prompts
@@ -449,12 +421,10 @@ class Script(scripts.Script):
         
         if len(p.prompts) > 1 :
             
-            grid = images.image_grid(image_results, batch_size)
+            grid = images.image_grid(imges_p, batch_size)
             infotexts.insert(0, infotexts[0])
-            image_results.insert(0, grid)
+            imges_p.insert(0, grid)
             images.save_image(grid, p.outpath_grids, "grid", grid=True, p=p)
         
 
-        return Processed(p, image_results, p.seed, "", all_prompts=all_prompts, infotexts=infotexts)
-
-
+        return Processed(p, imges_p, p.seed, "", all_prompts=all_prompts, infotexts=infotexts)        
