@@ -272,6 +272,3 @@ def get_trigger_files():
     print_msg(output)
 
     return output
-
-
-    print_msg(output)'''
