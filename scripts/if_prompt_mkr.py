@@ -10,7 +10,7 @@ import unicodedata
 from modules import images, script_callbacks, shared
 from modules.processing import Processed, process_images
 from modules.shared import state
-from scripts.negfiles import get_negative
+from scripts.extrafiles import get_negative, get_excluded_words
 from scripts.modeltags import get_loras, get_embeddings, get_lora_trigger_words, get_embedding_trigger_words, get_trigger_files
 
 
@@ -60,7 +60,7 @@ class Script(scripts.Script):
                 return [os.path.splitext(f)[0] for f in os.listdir(character_path) if f.endswith('.json')]
             else:
                 return []
-            
+        
 
         neg_prompts = get_negative(os.path.join(script_dir, "negfiles"))
 
@@ -69,7 +69,7 @@ class Script(scripts.Script):
 
 
         params = {
-            'selected_character': character_list if character_list else ['if_ai_SD', 'iF_Ai_SD_b', 'iF_Ai_SD_NSFW'],
+            'selected_character': character_list if character_list else ['if_ai_SD', 'iF_Ai_SD_b', 'iF_Ai_SD_NSFW', 'IF_prompt_MKR'],
             'prompt_prefix': '',
             'input_prompt': '(CatGirl warrior:1.2), legendary sword,',
             'negative_prompt': '(nsfw), (worst quality, low quality:1.4), ((text, signature, captions):1.3),',
@@ -78,11 +78,13 @@ class Script(scripts.Script):
             'prompt_per_image': False,
             'batch_size': 1,
             'batch_count': 1,
+            'exclude_words': [],
 
         }
 
         prompt_prefix_value = params['prompt_prefix']
         prompt_subfix_value = params['prompt_subfix']
+
 
         
         def on_neg_prompts_change(x):
@@ -187,7 +189,7 @@ class Script(scripts.Script):
 
         with gr.Row():
             with gr.Column(scale=1, min_width=400):
-                excluded_words = gr.inputs.Textbox(lines=1, placeholder="Enter case-sensitive words to exclude, separated by commas", label="Excluded Words")
+                dynamic_excluded_words = gr.inputs.Textbox(lines=1, placeholder="Enter case-sensitive words to exclude, separated by commas", label="Excluded Words")
             with gr.Column(scale=1, min_width=100):
                 get_triger_files = gr.Button("Get All Trigger Files", elem_id="iF_prompt_MKR_get_triger_files")
                 message = gr.inputs.Textbox(lines=2, default="Creates a file with all the trigger words for each model (takes 3-5 seconds for each model you have) if you already have .civitai.info in your model folder, then you don't need to run this", label="Trigger Message")
@@ -199,7 +201,7 @@ class Script(scripts.Script):
         prompt_subfix.change(lambda x: params.update({'prompt_subfix': x}), prompt_subfix, None)
         batch_count.change(lambda x: params.update({"batch_count": x}), batch_count, None)
         batch_size.change(lambda x: params.update({'batch_size': x}), batch_size, None)
-        excluded_words.change(lambda x: params.update({'excluded_words': [word.strip() for word in x.split(',')] if x else []}), excluded_words, None)
+        dynamic_excluded_words.change(lambda x: params.update({'dynamic_excluded_words': [word.strip() for word in x.split(',')] if x else []}), dynamic_excluded_words, None)
         get_triger_files.click(get_trigger_files, inputs=[], outputs=[message])
         
         neg_prompts_dropdown.change(on_neg_prompts_change, neg_prompts_dropdown, negative_prompt)
@@ -210,8 +212,9 @@ class Script(scripts.Script):
         lora_model.change(on_apply_lora, inputs=[lora_model], outputs=[prompt_subfix])
         print("LORA Model value:", lora_model.value)
         
-        return [selected_character, prompt_prefix, input_prompt, prompt_subfix, excluded_words, negative_prompt, prompt_mode, batch_count, batch_size]
+        return [selected_character, prompt_prefix, input_prompt, prompt_subfix, dynamic_excluded_words, negative_prompt, prompt_mode, batch_count, batch_size]
     
+
 
     def send_request(self, data, headers):
         response = requests.post("http://127.0.0.1:5000/api/v1/chat", data=json.dumps(data), headers=headers)
@@ -235,30 +238,46 @@ class Script(scripts.Script):
         return visible[-1][1]
 
 
-    def process_text(self, generated_text, words):
-        if words:
-            generated_text = ' '.join(word for word in generated_text.split() if word not in words)
+
+    
+    def process_text(self, generated_text, not_allowed_words):
+
+        for word in not_allowed_words:
+            word_regex = r'\b' + re.escape(word) + r'\b'
+            generated_text = re.sub(word_regex, '', generated_text, flags=re.IGNORECASE)
+        
+        for phrase in re.findall(r'\(([^)]*)\)', generated_text): 
+            original_phrase = phrase
+            for word in not_allowed_words:
+                word_regex = r'\b' + re.escape(word) + r'\b'
+                phrase = re.sub(word_regex, '', phrase, flags=re.IGNORECASE) 
+            generated_text = generated_text.replace('(' + original_phrase + ')', '(' + phrase + ')') 
+            
+        generated_text = re.sub(r'\(\s*,\s*,\s*\)', '(, )', generated_text)
+        generated_text = re.sub(r'\s{2,}', ' ', generated_text)
 
         if '<audio' in generated_text:
             print(f"iF_prompt_MKR: Audio has been generated.")
             generated_text = re.sub(r'<audio.*?>.*?</audio>', '', generated_text)
 
         return generated_text
-    
 
-    def generate_text(self, p, character, prompt, words, prompt_per_image, prompt_per_batch, default_mode, batch_count, batch_size):
+
+    def generate_text(self, p, character, prompt, not_allowed_words, prompt_per_image, prompt_per_batch, default_mode, batch_count, batch_size):
         generated_texts = []
 
         print(f"iF_prompt_MKR: Generating a text prompt using: {character}")
         stopping = shared.opts.data.get("stopping_string", None)
         if not stopping:
             stopping = "### Assistant:"
-        xtokens = shared.opts.data.get("xtokens", 80)
+        xtokens = shared.opts.data.get("xtokens", 120)
         xtemperature = shared.opts.data.get("xtemperature", 0.7)
         xtop_k = shared.opts.data.get("xtop_k", 30)
         xtop_p = shared.opts.data.get("xtop_p", 0.9)
         xtypical_p = shared.opts.data.get("xtypical_p", 0.9)
         xrepetition_penalty = shared.opts.data.get("xrepetition_penalty", 1.2)
+        if not character:
+            character = "if_ai_SD"
 
         data = {
             'user_input': prompt,
@@ -300,32 +319,34 @@ class Script(scripts.Script):
             for i in range( batch_count * batch_size):
                 generated_text = self.send_request(data, headers)
                 if generated_text:
-                    processed_text = self.process_text(generated_text, words)
+                    processed_text = self.process_text(generated_text, not_allowed_words)
                     generated_texts.append(processed_text)
         elif prompt_per_batch:
             for i in range( batch_count):
                 generated_text = self.send_request(data, headers)
                 if generated_text:
-                    processed_text = self.process_text(generated_text, words)
+                    processed_text = self.process_text(generated_text, not_allowed_words)
                     generated_texts.append(processed_text)
         elif default_mode:
             generated_text = self.send_request(data, headers)
             if generated_text:
-                processed_text = self.process_text(generated_text, words)
+                processed_text = self.process_text(generated_text, not_allowed_words)
                 generated_texts.append(processed_text)
 
         return generated_texts
 
 
-    def run(self, p, selected_character, prompt_prefix, input_prompt, prompt_subfix, excluded_words, negative_prompt, prompt_mode, batch_count, batch_size, *args, **kwargs):
+    def run(self, p, selected_character, prompt_prefix, input_prompt, prompt_subfix, dynamic_excluded_words, negative_prompt, prompt_mode, batch_count, batch_size, *args, **kwargs):
         prompts = []
         prompt_per_image = (prompt_mode == 'Per Image')
         prompt_per_batch = (prompt_mode == 'Per Batch')
         default_mode = (prompt_mode == 'Default')
         batch_count = int(batch_count)
-        batch_size = int(batch_size)    
-
-        generated_texts = self.generate_text(p, selected_character, input_prompt, excluded_words, prompt_per_image, prompt_per_batch, default_mode, batch_count, batch_size)
+        batch_size = int(batch_size) 
+        excluded_path = os.path.join(script_dir, "excluded/excluded_words.txt")   
+        not_allowed_words = get_excluded_words(dynamic_excluded_words, excluded_path)
+       
+        generated_texts = self.generate_text(p, selected_character, input_prompt, not_allowed_words, prompt_per_image, prompt_per_batch, default_mode, batch_count, batch_size)
 
         if not generated_texts:
             print(f"iF_prompt_MKR: No generated texts found for {selected_character}. Check if Oobabooga is running in API mode and the character is available in Oobabooga's character folder.")
@@ -427,4 +448,4 @@ class Script(scripts.Script):
             images.save_image(grid, p.outpath_grids, "grid", grid=True, p=p)
         
 
-        return Processed(p, imges_p, p.seed, "", all_prompts=all_prompts, infotexts=infotexts)        
+        return Processed(p, imges_p, p.seed, "", all_prompts=all_prompts, infotexts=infotexts)    
