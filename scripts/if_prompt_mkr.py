@@ -19,28 +19,16 @@ script_dir = scripts.basedir()
 
 def on_ui_settings():
     section=("if_prompt_mkr", "iF_prompt_MKR")
+    shared.opts.add_option("HOST", shared.OptionInfo(
+      "", "Host ip and port should be :5000 local machine or is different than http://127.0.0.1:5000 ", section=section))
     shared.opts.add_option("character_path", shared.OptionInfo(
-      "", "Select an iF or other SD prompt maker character you want to use inside the Oobabooga character Directory json only", section=section))
+      "", 'Select Ooga characters folder X:\oobabooga_windows\text-generation-webui\characters to list all the json characters you have installed', section=section))
+    shared.opts.add_option("preset", shared.OptionInfo(
+      "", 'Select a Yaml preset from oobabooga The default is "IF_promptMKR_preset" do not add the extension and use the double quotes', section=section))
+    shared.opts.add_option("instruction_template", shared.OptionInfo(
+      "", 'Set a instruction template of the Model default is "Wizard-Mega" i.e Vicuna-v1.1, WizardLM, Wizard-Mega, Alpaca, use the double quotes', section=section))
     shared.opts.add_option("stopping_string", shared.OptionInfo(
-      "", 'Write a custom stopping string such as i.e for Alpaca use "### Assistant:" or your name i.e "ImpactFrames:"', section=section))
-    shared.opts.add_option("xtokens", shared.OptionInfo(
-      80, "Set the number of tokens to generate", gr.Number, section=section
-      ))
-    shared.opts.add_option("xtemperature", shared.OptionInfo(
-      0.7, "Set the temperature of the generated text", gr.Slider, {"minimum": 0, "maximum": 1, "step": 0.05}, section=section
-      ))
-    shared.opts.add_option("xtop_k", shared.OptionInfo(
-      30, "Set the top k of the generated text", gr.Number, section=section
-      ))
-    shared.opts.add_option("xtop_p", shared.OptionInfo(
-      0.9, "Set the top p of the generated text", gr.Slider, {"minimum": 0, "maximum": 1, "step": 0.1}, section=section
-      ))
-    shared.opts.add_option("xtypical_p", shared.OptionInfo(
-      1, "Set the typical p of the generated text", gr.Slider, {"minimum": 0, "maximum": 1, "step": 0.1}, section=section
-      ))
-    shared.opts.add_option("xrepetition_penalty", shared.OptionInfo(
-      1.2, "Set the repetition penalty of the", gr.Slider, {"minimum": 0, "maximum": 2, "step": 0.1}, section=section
-      ))
+      "", 'Write a custom stopping string default is "### Assistant:" ', section=section))
     
 
 script_callbacks.on_ui_settings(on_ui_settings)
@@ -56,8 +44,11 @@ class Script(scripts.Script):
     def ui(self, is_img2img):
         def get_character_list():
             character_path = shared.opts.data.get("character_path", None)
+            print(f"Character Path: {character_path}") 
             if character_path and os.path.exists(character_path):
-                return [os.path.splitext(f)[0] for f in os.listdir(character_path) if f.endswith('.json')]
+                character_list = [os.path.splitext(f)[0] for f in os.listdir(character_path) if f.endswith('.json')]
+                print(f"Character List: {character_list}")  
+                return character_list
             else:
                 return []
         
@@ -79,6 +70,7 @@ class Script(scripts.Script):
             'batch_size': 1,
             'batch_count': 1,
             'exclude_words': [],
+            'remove_weights': False,
 
         }
 
@@ -190,6 +182,7 @@ class Script(scripts.Script):
         with gr.Row():
             with gr.Column(scale=1, min_width=400):
                 dynamic_excluded_words = gr.inputs.Textbox(lines=1, placeholder="Enter case-sensitive words to exclude, separated by commas", label="Excluded Words")
+                remove_weights = gr.inputs.Checkbox(label="Remove weights from prompts", default=False)
             with gr.Column(scale=1, min_width=100):
                 get_triger_files = gr.Button("Get All Trigger Files", elem_id="iF_prompt_MKR_get_triger_files")
                 message = gr.inputs.Textbox(lines=2, default="Creates a file with all the trigger words for each model (takes 3-5 seconds for each model you have) if you already have .civitai.info in your model folder, then you don't need to run this", label="Trigger Message")
@@ -201,6 +194,7 @@ class Script(scripts.Script):
         prompt_subfix.change(lambda x: params.update({'prompt_subfix': x}), prompt_subfix, None)
         batch_count.change(lambda x: params.update({"batch_count": x}), batch_count, None)
         batch_size.change(lambda x: params.update({'batch_size': x}), batch_size, None)
+        remove_weights.change(lambda x: params.update({'remove_weights': x}), remove_weights, None)
         dynamic_excluded_words.change(lambda x: params.update({'dynamic_excluded_words': [word.strip() for word in x.split(',')] if x else []}), dynamic_excluded_words, None)
         get_triger_files.click(get_trigger_files, inputs=[], outputs=[message])
         
@@ -212,12 +206,19 @@ class Script(scripts.Script):
         lora_model.change(on_apply_lora, inputs=[lora_model], outputs=[prompt_subfix])
         print("LORA Model value:", lora_model.value)
         
-        return [selected_character, prompt_prefix, input_prompt, prompt_subfix, dynamic_excluded_words, negative_prompt, prompt_mode, batch_count, batch_size]
+        return [selected_character, prompt_prefix, input_prompt, prompt_subfix, dynamic_excluded_words, negative_prompt, prompt_mode, batch_count, batch_size, remove_weights]
     
 
 
     def send_request(self, data, headers):
-        response = requests.post("http://127.0.0.1:5000/api/v1/chat", data=json.dumps(data), headers=headers)
+        
+        HOST = shared.opts.data.get('HOST', None)
+        print(f"iF_prompt_MKR: Host is {HOST}")
+        if not HOST:
+            HOST = '127.0.0.1:5000'
+        
+        URI = f'http://{HOST}/api/v1/chat'
+        response = requests.post(URI, data=json.dumps(data), headers=headers)
         if response.status_code != 200:
             print(f"iF_prompt_MKR: _Error_ Request failed with status code, probably Ooga isn't running with API flags check the readme", response.status_code)
             return None
@@ -240,7 +241,12 @@ class Script(scripts.Script):
 
 
     
-    def process_text(self, generated_text, not_allowed_words):
+    def process_text(self, generated_text, not_allowed_words, remove_weights):
+
+        if remove_weights:
+            
+            generated_text = re.sub(r'\(([^)]*):[\d\.]*\)', r'\1', generated_text)
+            generated_text = re.sub(r'(\w+):[\d\.]*(?=[ ,]|$)', r'\1', generated_text)
 
         for word in not_allowed_words:
             word_regex = r'\b' + re.escape(word) + r'\b'
@@ -263,19 +269,19 @@ class Script(scripts.Script):
         return generated_text
 
 
-    def generate_text(self, p, character, prompt, not_allowed_words, prompt_per_image, prompt_per_batch, default_mode, batch_count, batch_size):
+    def generate_text(self, p, character, prompt, not_allowed_words, prompt_per_image, prompt_per_batch, default_mode, batch_count, batch_size, remove_weights):
         generated_texts = []
 
         print(f"iF_prompt_MKR: Generating a text prompt using: {character}")
         stopping = shared.opts.data.get("stopping_string", None)
         if not stopping:
             stopping = "### Assistant:"
-        xtokens = shared.opts.data.get("xtokens", 120)
-        xtemperature = shared.opts.data.get("xtemperature", 0.7)
-        xtop_k = shared.opts.data.get("xtop_k", 30)
-        xtop_p = shared.opts.data.get("xtop_p", 0.9)
-        xtypical_p = shared.opts.data.get("xtypical_p", 0.9)
-        xrepetition_penalty = shared.opts.data.get("xrepetition_penalty", 1.2)
+        preset = shared.opts.data.get("preset", None)
+        if not preset:
+            preset = 'IF_promptMKR_preset'
+        instruction_template = shared.opts.data.get("instruction_template", None)
+        if not instruction_template: 
+            instruction_template = 'Wizard-Mega'
         if not character:
             character = "if_ai_SD"
 
@@ -283,28 +289,16 @@ class Script(scripts.Script):
             'user_input': prompt,
             'history': {'internal': [], 'visible': []},
             'mode': "chat",
+            'your_name': "You",
             'character': character,
-            'instruction_template': 'Wizard-Mega',
+            'instruction_template': instruction_template,
+            'preset': preset,
             'regenerate': False,
             '_continue': False,
             'stop_at_newline': False,
             'chat_prompt_size': 2048,
             'chat_generation_attempts': 1,
             'chat-instruct_command': 'Continue the chat dialogue below. Write a single reply for the character "".\n\n',
-            'max_new_tokens': xtokens,
-            'temperature': xtemperature,
-            'top_k': xtop_k,
-            'top_p': xtop_p,
-            'do_sample': True,
-            'typical_p': xtypical_p,
-            'repetition_penalty': xrepetition_penalty,
-            'encoder_repetition_penalty': 1.0,
-            'min_length': 0,
-            'no_repeat_ngram_size': 0,
-            'num_beams': 1,
-            'penalty_alpha': 0,
-            'length_penalty': 1,
-            'early_stopping': False,
             'seed': -1,
             'add_bos_token': True,
             'custom_stopping_strings': [stopping,],
@@ -319,24 +313,24 @@ class Script(scripts.Script):
             for i in range( batch_count * batch_size):
                 generated_text = self.send_request(data, headers)
                 if generated_text:
-                    processed_text = self.process_text(generated_text, not_allowed_words)
+                    processed_text = self.process_text(generated_text, not_allowed_words, remove_weights)
                     generated_texts.append(processed_text)
         elif prompt_per_batch:
             for i in range( batch_count):
                 generated_text = self.send_request(data, headers)
                 if generated_text:
-                    processed_text = self.process_text(generated_text, not_allowed_words)
+                    processed_text = self.process_text(generated_text, not_allowed_words, remove_weights)
                     generated_texts.append(processed_text)
         elif default_mode:
             generated_text = self.send_request(data, headers)
             if generated_text:
-                processed_text = self.process_text(generated_text, not_allowed_words)
+                processed_text = self.process_text(generated_text, not_allowed_words, remove_weights)
                 generated_texts.append(processed_text)
 
         return generated_texts
 
 
-    def run(self, p, selected_character, prompt_prefix, input_prompt, prompt_subfix, dynamic_excluded_words, negative_prompt, prompt_mode, batch_count, batch_size, *args, **kwargs):
+    def run(self, p, selected_character, prompt_prefix, input_prompt, prompt_subfix, dynamic_excluded_words, negative_prompt, prompt_mode, batch_count, batch_size, remove_weights, *args, **kwargs):
         prompts = []
         prompt_per_image = (prompt_mode == 'Per Image')
         prompt_per_batch = (prompt_mode == 'Per Batch')
@@ -346,7 +340,7 @@ class Script(scripts.Script):
         excluded_path = os.path.join(script_dir, "excluded/excluded_words.txt")   
         not_allowed_words = get_excluded_words(dynamic_excluded_words, excluded_path)
        
-        generated_texts = self.generate_text(p, selected_character, input_prompt, not_allowed_words, prompt_per_image, prompt_per_batch, default_mode, batch_count, batch_size)
+        generated_texts = self.generate_text(p, selected_character, input_prompt, not_allowed_words, prompt_per_image, prompt_per_batch, default_mode, batch_count, batch_size, remove_weights)
 
         if not generated_texts:
             print(f"iF_prompt_MKR: No generated texts found for {selected_character}. Check if Oobabooga is running in API mode and the character is available in Oobabooga's character folder.")
