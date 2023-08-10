@@ -212,7 +212,7 @@ class Script(scripts.Script):
 
     def send_request(self, data, headers):
         
-        HOST = shared.opts.data.get('HOST', None)
+        HOST = shared.options.get('HOST', None)
         print(f"iF_prompt_MKR: Host is {HOST}")
         if not HOST:
             HOST = '127.0.0.1:5000'
@@ -246,7 +246,6 @@ class Script(scripts.Script):
         if remove_weights:
             
             generated_text = re.sub(r'\(([^)]*):[\d\.]*\)', r'\1', generated_text)
-            generated_text = re.sub(r'(\w+):[\d\.]*(?=[ ,]|$)', r'\1', generated_text)
 
         for word in not_allowed_words:
             word_regex = r'\b' + re.escape(word) + r'\b'
