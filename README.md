@@ -23,7 +23,7 @@ https://civitai.com/user/impactframes/models
  -`♡´- Thanks to Rvolved forthe suggestions to improve the extension
 
 [![YouTube Video](https://img.youtube.com/vi/Y1E_y7ZrX5w/0.jpg)](https://youtu.be/Y1E_y7ZrX5w)
-[![YouTube Video](https://img.youtube.com/vi/Bg9jVxkk4/0.jpg)](https://youtu.be/Bg9jV2Vxkk4)
+[![YouTube Video](https://img.youtube.com/vi/Bg9jV2Vxkk4/0.jpg)](https://youtu.be/Bg9jV2Vxkk4)
 
 Please move the Characters from the A1111 extension 
 \stable-diffusion-webui\extensions\IF_prompt_MKR\characters 
