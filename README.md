@@ -1,10 +1,11 @@
 # IF_prompt_MKR
 An A1111 extension to let the AI make prompts for SD using Oobabooga
-characters work on exllama with superHOT now
+characters work on exllama with superHOT and ofcourse IF_PromptMKR_GPTQ Model
+https://huggingface.co/impactframes/IF_PromptMKR_GPTQ
 
-webui.py has CMD FLAGS
+Use this Flags on  the Flags.txt
 
-CMD_FLAGS = '--chat --model-menu --model TheBloke_WizardLM-13B-V1-1-SuperHOT-8K-GPTQ --loader exllama_hf --chat --no-stream --extension superbooga api --listen-port 7861 --listen'
+--chat --model-menu --model IF_PromptMKR_GPTQ --loader exllama_hf --chat --no-stream --extension superbooga api --listen-port 7861 --listen
 
 you need 
 api --listen-port 7861 --listen
