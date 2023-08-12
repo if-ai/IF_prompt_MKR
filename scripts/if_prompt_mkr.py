@@ -42,15 +42,18 @@ class Script(scripts.Script):
     
     
     def ui(self, is_img2img):
+
         def get_character_list():
             character_path = shared.opts.data.get("character_path", None)
-            print(f"Character Path: {character_path}") 
+
+            print(f"Character Path: {character_path}")
             if character_path and os.path.exists(character_path):
                 character_list = [os.path.splitext(f)[0] for f in os.listdir(character_path) if f.endswith('.json')]
-                print(f"Character List: {character_list}")  
+                print(f"Character List: {character_list}")
                 return character_list
             else:
                 return []
+
         
 
         neg_prompts = get_negative(os.path.join(script_dir, "negfiles"))
@@ -71,7 +74,7 @@ class Script(scripts.Script):
             'batch_count': 1,
             'exclude_words': [],
             'remove_weights': False,
-
+            'remove_author': False,
         }
 
         prompt_prefix_value = params['prompt_prefix']
@@ -143,9 +146,9 @@ class Script(scripts.Script):
 
      
         with gr.Row(scale=1, min_width=400):
-            selected_character = gr.inputs.Dropdown(label="characters", choices=params['selected_character']) 
+            selected_character = gr.Dropdown(label="characters", choices=params['selected_character']) 
             with gr.Row():
-                prompt_mode = gr.inputs.Radio(['Default', 'Per Image', 'Per Batch'], label='Prompt Mode')
+                prompt_mode = gr.Radio(['Default', 'Per Image', 'Per Batch'], label='Prompt Mode')
         with gr.Row(scale=1, min_width=400):
             input_prompt = gr.Textbox(lines=1, placeholder=params['input_prompt'], label="Input Prompt", elem_id="iF_prompt_MKR_input_prompt")      
             with gr.Row():
@@ -159,7 +162,7 @@ class Script(scripts.Script):
                 prompt_prefix = gr.Textbox(lines=1, default=prompt_prefix_value, label="Prefix or embeddigs (optonal)", elem_id="iF_prompt_MKR_prompt_prefix")
 
                 with gr.Column(scale=1, min_width=100):
-                    embedding_model = gr.inputs.Dropdown(label="Embeddings Model", choices=ti_choices, default='')
+                    embedding_model = gr.Dropdown(label="Embeddings Model", choices=ti_choices, default='')
 
         with gr.Accordion('Suffix & Loras', open=True):
             lora_choices = ["None"]
@@ -181,11 +184,12 @@ class Script(scripts.Script):
 
         with gr.Row():
             with gr.Column(scale=1, min_width=400):
-                dynamic_excluded_words = gr.inputs.Textbox(lines=1, placeholder="Enter case-sensitive words to exclude, separated by commas", label="Excluded Words")
-                remove_weights = gr.inputs.Checkbox(label="Remove weights from prompts", default=False)
+                dynamic_excluded_words = gr.Textbox(lines=1, placeholder="Enter case-sensitive words to exclude, separated by commas", label="Excluded Words")
+                remove_weights = gr.Checkbox(label="Remove weights from prompts", default=False)
+                remove_author = gr.Checkbox(label="Remove Artists", default=False)
             with gr.Column(scale=1, min_width=100):
                 get_triger_files = gr.Button("Get All Trigger Files", elem_id="iF_prompt_MKR_get_triger_files")
-                message = gr.inputs.Textbox(lines=2, default="Creates a file with all the trigger words for each model (takes 3-5 seconds for each model you have) if you already have .civitai.info in your model folder, then you don't need to run this", label="Trigger Message")
+                message = gr.Textbox(lines=2, default="Creates a file with all the trigger words for each model (takes 3-5 seconds for each model you have) if you already have .civitai.info in your model folder, then you don't need to run this", label="Trigger Message")
                 
 
         selected_character.change(lambda x: params.update({'selected_character': x}), selected_character, None)
@@ -195,6 +199,7 @@ class Script(scripts.Script):
         batch_count.change(lambda x: params.update({"batch_count": x}), batch_count, None)
         batch_size.change(lambda x: params.update({'batch_size': x}), batch_size, None)
         remove_weights.change(lambda x: params.update({'remove_weights': x}), remove_weights, None)
+        remove_author.change(lambda x: params.update({'remove_author': x}), remove_author, None)
         dynamic_excluded_words.change(lambda x: params.update({'dynamic_excluded_words': [word.strip() for word in x.split(',')] if x else []}), dynamic_excluded_words, None)
         get_triger_files.click(get_trigger_files, inputs=[], outputs=[message])
         
@@ -206,17 +211,17 @@ class Script(scripts.Script):
         lora_model.change(on_apply_lora, inputs=[lora_model], outputs=[prompt_subfix])
         print("LORA Model value:", lora_model.value)
         
-        return [selected_character, prompt_prefix, input_prompt, prompt_subfix, dynamic_excluded_words, negative_prompt, prompt_mode, batch_count, batch_size, remove_weights]
+        return [selected_character, prompt_prefix, input_prompt, prompt_subfix, dynamic_excluded_words, negative_prompt, prompt_mode, batch_count, batch_size, remove_weights, remove_author]
     
 
 
     def send_request(self, data, headers):
         
-        HOST = shared.options.get('HOST', None)
-        print(f"iF_prompt_MKR: Host is {HOST}")
+        HOST = shared.opts.data.get('HOST', None)
         if not HOST:
             HOST = '127.0.0.1:5000'
-        
+        print(f"iF_prompt_MKR: Conecting to {HOST}")
+
         URI = f'http://{HOST}/api/v1/chat'
         response = requests.post(URI, data=json.dumps(data), headers=headers)
         if response.status_code != 200:
@@ -241,11 +246,19 @@ class Script(scripts.Script):
 
 
     
-    def process_text(self, generated_text, not_allowed_words, remove_weights):
+    def process_text(self, generated_text, not_allowed_words, remove_weights, remove_author):
+
+        
+        if remove_author:
+            generated_text = re.sub(r'\bby:.*', '', generated_text)
 
         if remove_weights:
             
             generated_text = re.sub(r'\(([^)]*):[\d\.]*\)', r'\1', generated_text)
+            generated_text = re.sub(r'(\w+):[\d\.]*(?=[ ,]|$)', r'\1', generated_text)
+        
+
+
 
         for word in not_allowed_words:
             word_regex = r'\b' + re.escape(word) + r'\b'
@@ -260,6 +273,9 @@ class Script(scripts.Script):
             
         generated_text = re.sub(r'\(\s*,\s*,\s*\)', '(, )', generated_text)
         generated_text = re.sub(r'\s{2,}', ' ', generated_text)
+        generated_text = re.sub(r'\.,', ',', generated_text)
+        generated_text = re.sub(r',,', ',', generated_text)
+
 
         if '<audio' in generated_text:
             print(f"iF_prompt_MKR: Audio has been generated.")
@@ -268,7 +284,7 @@ class Script(scripts.Script):
         return generated_text
 
 
-    def generate_text(self, p, character, prompt, not_allowed_words, prompt_per_image, prompt_per_batch, default_mode, batch_count, batch_size, remove_weights):
+    def generate_text(self, p, character, prompt, not_allowed_words, prompt_per_image, prompt_per_batch, default_mode, batch_count, batch_size, remove_weights, remove_author):
         generated_texts = []
 
         print(f"iF_prompt_MKR: Generating a text prompt using: {character}")
@@ -277,12 +293,12 @@ class Script(scripts.Script):
             stopping = "### Assistant:"
         preset = shared.opts.data.get("preset", None)
         if not preset:
-            preset = 'IF_promptMKR_preset'
+            preset = 'RD_PromptMKR_preset'
         instruction_template = shared.opts.data.get("instruction_template", None)
         if not instruction_template: 
-            instruction_template = 'Wizard-Mega'
+            instruction_template = 'Alpaca'
         if not character:
-            character = "if_ai_SD"
+            character = "RDpromptMKR"
 
         data = {
             'user_input': prompt,
@@ -297,7 +313,7 @@ class Script(scripts.Script):
             'stop_at_newline': False,
             'chat_prompt_size': 2048,
             'chat_generation_attempts': 1,
-            'chat-instruct_command': 'Continue the chat dialogue below. Write a single reply for the character "".\n\n',
+            'chat-instruct_command': 'Act like a prompt creator, brake keywords by comas, provide high quality, non-verboose, coherent, brief, concise, and not superfluous prompts, Only write the visuals elements of the picture, Never write art commentaries or intentions. Construct the prompt with the componet format, Always include all the keywords from the request verbatim as the main subject of the response: "".\n\n',
             'seed': -1,
             'add_bos_token': True,
             'custom_stopping_strings': [stopping,],
@@ -312,24 +328,24 @@ class Script(scripts.Script):
             for i in range( batch_count * batch_size):
                 generated_text = self.send_request(data, headers)
                 if generated_text:
-                    processed_text = self.process_text(generated_text, not_allowed_words, remove_weights)
+                    processed_text = self.process_text(generated_text, not_allowed_words, remove_weights, remove_author)
                     generated_texts.append(processed_text)
         elif prompt_per_batch:
             for i in range( batch_count):
                 generated_text = self.send_request(data, headers)
                 if generated_text:
-                    processed_text = self.process_text(generated_text, not_allowed_words, remove_weights)
+                    processed_text = self.process_text(generated_text, not_allowed_words, remove_weights, remove_author)
                     generated_texts.append(processed_text)
         elif default_mode:
             generated_text = self.send_request(data, headers)
             if generated_text:
-                processed_text = self.process_text(generated_text, not_allowed_words, remove_weights)
+                processed_text = self.process_text(generated_text, not_allowed_words, remove_weights, remove_author)
                 generated_texts.append(processed_text)
 
         return generated_texts
 
 
-    def run(self, p, selected_character, prompt_prefix, input_prompt, prompt_subfix, dynamic_excluded_words, negative_prompt, prompt_mode, batch_count, batch_size, remove_weights, *args, **kwargs):
+    def run(self, p, selected_character, prompt_prefix, input_prompt, prompt_subfix, dynamic_excluded_words, negative_prompt, prompt_mode, batch_count, batch_size, remove_weights, remove_author, *args, **kwargs):
         prompts = []
         prompt_per_image = (prompt_mode == 'Per Image')
         prompt_per_batch = (prompt_mode == 'Per Batch')
@@ -339,7 +355,7 @@ class Script(scripts.Script):
         excluded_path = os.path.join(script_dir, "excluded/excluded_words.txt")   
         not_allowed_words = get_excluded_words(dynamic_excluded_words, excluded_path)
        
-        generated_texts = self.generate_text(p, selected_character, input_prompt, not_allowed_words, prompt_per_image, prompt_per_batch, default_mode, batch_count, batch_size, remove_weights)
+        generated_texts = self.generate_text(p, selected_character, input_prompt, not_allowed_words, prompt_per_image, prompt_per_batch, default_mode, batch_count, batch_size, remove_weights, remove_author)
 
         if not generated_texts:
             print(f"iF_prompt_MKR: No generated texts found for {selected_character}. Check if Oobabooga is running in API mode and the character is available in Oobabooga's character folder.")
@@ -365,8 +381,6 @@ class Script(scripts.Script):
         p.do_not_save_grid = True
         state.job_count = 0
         generations = 0
-        
-        
         generations += len(p.prompts)
             
         print(f"Creating {generations} image generations")
@@ -382,7 +396,7 @@ class Script(scripts.Script):
             p.batch_size = batch_size
             state.job_count += len(p.prompts) * p.n_iter
             image_count = p.batch_size * p.n_iter
-            generations += image_count
+            generations = image_count
             print(f"iF_prompt_MKR: Processing {generations} image generations will have the same prompt")
             p.prompt = p.prompts[0]
             p.seed = current_seed
@@ -398,8 +412,9 @@ class Script(scripts.Script):
 
         elif prompt_per_batch:
             state.job_count += len(p.prompts) * batch_count
-            generations += batch_size
-            print(f"iF_prompt_MKR: Processing {batch_count} batches of {generations} image generations")
+            total_images = batch_count * batch_size
+            generations = batch_size
+            print(f"iF_prompt_MKR: Processing {generations} images will share {batch_count} prompts for a total of {total_images} image generations")
             for prompt in p.prompts:
                 p.prompt = prompt
                 for i in range(batch_size):
@@ -417,7 +432,7 @@ class Script(scripts.Script):
 
         elif prompt_per_image:
             state.job_count += len(p.prompts) * batch_count
-            generations += len(p.prompts)
+            generations = batch_count * batch_size
             print(f"iF_prompt_MKR: Processing {generations} image generations will different prompts")
             for prompt in p.prompts:
                 p.prompt = prompt
@@ -428,7 +443,6 @@ class Script(scripts.Script):
                 tmp_grid = images.image_grid(proc.images, batch_size)
                 imges_p.append(tmp_grid)
                 
-
                 all_prompts += proc.all_prompts
                 infotexts += proc.infotexts
 
