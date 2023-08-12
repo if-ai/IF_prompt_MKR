@@ -20,8 +20,6 @@ Move the characters from the extension folder to your oobabooga Character Folder
 https://civitai.com/user/impactframes/models
 
  -`♡´- Thanks to all my supportes in Youtube and kofi @impactframes 
- 
- -`♡´- Thanks to Revolved from Rundiffusion his suggestions helped me to improve this extension
 
 
 [![YouTube Video](https://img.youtube.com/vi/Y1E_y7ZrX5w/0.jpg)](https://youtu.be/Y1E_y7ZrX5w)
