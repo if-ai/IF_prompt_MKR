@@ -14,15 +14,12 @@ and in automatic --api
 
 Move the characters from the extension folder to your oobabooga Character Folder and place the script on extensions or install it from url inside A1111
 
-
-
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/O4O51R44U)
 
 https://civitai.com/user/impactframes/models
 
  -`♡´- Thanks to all my supporters on Youtube and kofi @impactframes 
  
- -`♡´- Thanks to Rvolved forthe suggestions to improve the extension
 [![YouTube Video](https://img.youtube.com/vi/dg_8cGzzfY4/0.jpg)](https://youtu.be/dg_8cGzzfY4)
 [![YouTube Video](https://img.youtube.com/vi/Y1E_y7ZrX5w/0.jpg)](https://youtu.be/Y1E_y7ZrX5w)
 
