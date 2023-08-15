@@ -293,12 +293,12 @@ class Script(scripts.Script):
             stopping = "### Assistant:"
         preset = shared.opts.data.get("preset", None)
         if not preset:
-            preset = 'IF_PromptMKR_preset'
+            preset = 'IF_promptMKR_preset'
         instruction_template = shared.opts.data.get("instruction_template", None)
         if not instruction_template: 
             instruction_template = 'Alpaca'
         if not character:
-            character = "RDpromptMKR"
+            character = "IFpromptMKR"
 
         data = {
             'user_input': prompt,
