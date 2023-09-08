@@ -5,7 +5,7 @@ https://huggingface.co/impactframes/IF_PromptMKR_GPTQ
 
 Use this Flags on  the Flags.txt
 
---chat --model-menu --model IF_PromptMKR_GPTQ --loader exllama_hf --chat --no-stream --extension superbooga api --listen-port 7861 --listen
+--model-menu --model IF_PromptMKR_GPTQ --loader exllama_hf --chat --no-stream --extension superbooga api --listen-port 7861 --listen
 
 you need 
 api --listen-port 7861 --listen
