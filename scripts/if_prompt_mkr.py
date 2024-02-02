@@ -67,7 +67,7 @@ class Script(scripts.Script):
             'prompt_prefix': '',
             'input_prompt': '(CatGirl warrior:1.2), legendary sword,',
             'negative_prompt': '(nsfw), (worst quality, low quality:1.4), ((text, signature, captions):1.3),',
-            'prompt_subfix': 'dark theme <lora:LowRA:0.6>, add_detail <lora:add_detail:0.6>,',
+            'prompt_subfix': '',
             'prompt_per_batch': False,
             'prompt_per_image': False,
             'batch_size': 1,
@@ -135,6 +135,7 @@ class Script(scripts.Script):
                     
                 current_text = params['prompt_prefix']
                 current_text = re.sub(r"\{[^}]+\}", "", current_text)
+                embedding, ext = os.path.splitext(ti_name)
                 new_prompt_prefix = f"{current_text} {trigger_words}"
                 params['prompt_prefix'] = new_prompt_prefix
                 prompt_prefix.value = new_prompt_prefix
@@ -148,9 +149,9 @@ class Script(scripts.Script):
         with gr.Row(scale=1, min_width=400):
             selected_character = gr.Dropdown(label="characters", choices=params['selected_character']) 
             with gr.Row():
-                prompt_mode = gr.Radio(['Default', 'Per Image', 'Per Batch'], label='Prompt Mode')
+                prompt_mode = gr.Radio(['Default', 'Per Image', 'Per Batch'], label='Prompt Mode', value='Default')
         with gr.Row(scale=1, min_width=400):
-            input_prompt = gr.Textbox(lines=1, placeholder=params['input_prompt'], label="Input Prompt", elem_id="iF_prompt_MKR_input_prompt")      
+            input_prompt = gr.Textbox(lines=1, label="Input Prompt", value='(CatGirl warrior:1.2), legendary sword,', elem_id="iF_prompt_MKR_input_prompt")     
             with gr.Row():
                 batch_count = gr.Number(label="Batch count:", value=params['batch_count'])
                 batch_size = gr.Slider(1, 8, value=params['batch_size'], step=1, label='batch size')
@@ -162,7 +163,7 @@ class Script(scripts.Script):
                 prompt_prefix = gr.Textbox(lines=1, default=prompt_prefix_value, label="Prefix or embeddigs (optonal)", elem_id="iF_prompt_MKR_prompt_prefix")
 
                 with gr.Column(scale=1, min_width=100):
-                    embedding_model = gr.Dropdown(label="Embeddings Model", choices=ti_choices, default='')
+                    embedding_model = gr.Dropdown(label="Embeddings Model", choices=ti_choices, default='None')
 
         with gr.Accordion('Suffix & Loras', open=True):
             lora_choices = ["None"]
@@ -220,28 +221,20 @@ class Script(scripts.Script):
         HOST = shared.opts.data.get('HOST', None)
         if not HOST:
             HOST = '127.0.0.1:5000'
-        print(f"iF_prompt_MKR: Conecting to {HOST}")
+        print(f"iF_prompt_MKR: Connecting to {HOST}")
 
-        URI = f'http://{HOST}/api/v1/chat'
-        response = requests.post(URI, data=json.dumps(data), headers=headers)
-        if response.status_code != 200:
-            print(f"iF_prompt_MKR: _Error_ Request failed with status code, probably Ooga isn't running with API flags check the readme", response.status_code)
+        URI = f'http://{HOST}/v1/chat/completions'
+        headers = {
+            "Content-Type": "application/json"
+        }
+
+        response = requests.post(URI, headers=headers, json=data, verify=False)
+        if response.status_code == 200:
+            processed_text = response.json()['choices'][0]['message']['content']
+            return processed_text
+        else:
+            print(f"Error: Request failed with status code {response.status_code}")
             return None
-
-        results = json.loads(response.content)['results']
-        if not results:
-            print("No results found.")
-            return None
-
-        history = results[0]['history']
-        if not history:
-            return None
-
-        visible = history['visible']
-        if not visible:
-            return None
-
-        return visible[-1][1]
 
 
 
@@ -300,25 +293,29 @@ class Script(scripts.Script):
         if not character:
             character = "IFpromptMKR"
 
+
+        # Prepare the history with the user's input as the first message
+        history = [{"role": "user", "content": prompt}]
+
         data = {
-            'user_input': prompt,
-            'history': {'internal': [], 'visible': []},
+            #'user_input': prompt,
+            'messages': history,
             'mode': "chat",
-            'your_name': "You",
+            #'your_name': "You",
             'character': character,
-            'instruction_template': instruction_template,
-            'preset': preset,
-            'regenerate': False,
-            '_continue': False,
-            'stop_at_newline': False,
-            'chat_prompt_size': 2048,
-            'chat_generation_attempts': 1,
-            'chat-instruct_command': 'Act like a prompt creator, brake keywords by comas, provide high quality, non-verboose, coherent, brief, concise, and not superfluous prompts, Only write the visuals elements of the picture, Never write art commentaries or intentions. Construct the prompt with the componet format, Always include all the keywords from the request verbatim as the main subject of the response: "".\n\n',
-            'seed': -1,
-            'add_bos_token': True,
-            'custom_stopping_strings': [stopping,],
-            'truncation_length': 2048,
-            'ban_eos_token': False,
+            #'instruction_template': instruction_template,
+            #'preset': preset,
+            #'regenerate': False,
+            #'_continue': False,
+            #'stop_at_newline': False,
+            #'chat_prompt_size': 2048,
+            #'chat_generation_attempts': 1,
+            #'chat-instruct_command': 'Act like a prompt creator, brake keywords by comas, provide high quality, non-verboose, coherent, brief, concise, and not superfluous prompts, Only write the visuals elements of the picture, Never write art commentaries or intentions. Construct the prompt with the componet format, Always include all the keywords from the request verbatim as the main subject of the response: "".\n\n',
+            #'seed': -1,
+            #'add_bos_token': True,
+            #'custom_stopping_strings': [stopping,],
+            #'truncation_length': 2048,
+            #'ban_eos_token': False,
         }
         headers = {
             "Content-Type": "application/json"
