@@ -28,8 +28,9 @@ I added ollama to the extension you can now use ollama with GGUF models
 https://ollama.com/impactframes/stable_diffusion_prompt_maker
 
 ![E2KbChbUiY](https://github.com/if-ai/IF_prompt_MKR/assets/21185218/46b05d8e-5a5f-4435-8e1b-a8268517de12)
-![Uploading thorium_mR5sOSwOzM.png…]()
-![Uploading thorium_G0cmuGGY5h.png…]()
+![thorium_mR5sOSwOzM](https://github.com/if-ai/IF_prompt_MKR/assets/21185218/6dc79377-2ef5-42b0-9d01-4c3b5636f005)
+![thorium_G0cmuGGY5h](https://github.com/if-ai/IF_prompt_MKR/assets/21185218/e8263e67-13ac-4cec-b043-b71c4189ec40)
+
 
 
 Please move the Characters from the A1111 extension 
