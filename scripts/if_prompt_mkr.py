@@ -12,15 +12,23 @@ from modules.processing import Processed, process_images
 from modules.shared import state
 from scripts.extrafiles import get_negative, get_excluded_words
 from scripts.modeltags import get_loras, get_embeddings, get_lora_trigger_words, get_embedding_trigger_words, get_trigger_files
-
+from openai import OpenAI
 
 script_dir = scripts.basedir()
 
 
 def on_ui_settings():
     section=("if_prompt_mkr", "iF_prompt_MKR")
-    shared.opts.add_option("HOST", shared.OptionInfo(
-      "", "Host ip and port should be :5000 local machine or is different than http://127.0.0.1:5000 ", section=section))
+    shared.opts.add_option("api_choice", shared.OptionInfo(
+      "", "Select the API for generating prompts: 'Oobabooga' or 'Ollama'.", section=section))
+    shared.opts.add_option("base_ip", shared.OptionInfo(
+      "127.0.0.1", "Base IP address for the APIs. Default is '127.0.0.1'.", section=section))
+    shared.opts.add_option("oobabooga_port", shared.OptionInfo(
+      "5000", "Port for Oobabooga API. Default is '5000'.", section=section))
+    shared.opts.add_option("ollama_port", shared.OptionInfo(
+      "11434", "Port for Ollama API. Default is '11434'.", section=section))
+    shared.opts.add_option("ollama_model", shared.OptionInfo(
+      "impactframes/stable_diffusion_prompt_maker", "Model name for the Ollama API. Default is 'impactframes/stable_diffusion_prompt_maker'.", section=section))
     shared.opts.add_option("character_path", shared.OptionInfo(
       "", 'Select Ooga characters folder X:\oobabooga_windows\text-generation-webui\characters to list all the json characters you have installed', section=section))
     shared.opts.add_option("preset", shared.OptionInfo(
@@ -215,27 +223,38 @@ class Script(scripts.Script):
         return [selected_character, prompt_prefix, input_prompt, prompt_subfix, dynamic_excluded_words, negative_prompt, prompt_mode, batch_count, batch_size, remove_weights, remove_author]
     
 
+    def send_request(self, data, **kwargs):
+        api_choice = shared.opts.data.get('api_choice', 'oobabooga').lower()
+        base_ip = shared.opts.data.get('base_ip', '127.0.0.1')
+        headers = kwargs.get('headers', {"Content-Type": "application/json"})
 
-    def send_request(self, data, headers):
+        if api_choice == 'oobabooga':
+            port = shared.opts.data.get('oobabooga_port', '5000')
+            HOST = f"{base_ip}:{port}"
+            URI = f'http://{HOST}/v1/chat/completions'
+            response = requests.post(URI, headers=headers, json=data, verify=False)
+        elif api_choice == 'ollama':
+            port = shared.opts.data.get('ollama_port', '11434')
+            base_url = f'http://{base_ip}:{port}/v1'
+            ollama_model = kwargs.get('ollama_model', 'impactframes/stable_diffusion_prompt_maker')  
+            client = OpenAI(base_url=base_url, api_key='ollama')
+            response = client.chat.completions.create(
+                model=ollama_model,  
+                messages=data['messages']
+            )
         
-        HOST = shared.opts.data.get('HOST', None)
-        if not HOST:
-            HOST = '127.0.0.1:5000'
-        print(f"iF_prompt_MKR: Connecting to {HOST}")
-
-        URI = f'http://{HOST}/v1/chat/completions'
-        headers = {
-            "Content-Type": "application/json"
-        }
-
-        response = requests.post(URI, headers=headers, json=data, verify=False)
-        if response.status_code == 200:
-            processed_text = response.json()['choices'][0]['message']['content']
-            return processed_text
-        else:
-            print(f"Error: Request failed with status code {response.status_code}")
-            return None
-
+        if api_choice == 'oobabooga':
+            if response.status_code == 200:
+                return response.json()['choices'][0]['message']['content']
+            else:
+                print(f"Error: Request to Oobabooga failed with status code {response.status_code}")
+                return None
+        elif api_choice == 'ollama':
+            if response is not None and hasattr(response, 'choices') and len(response.choices) > 0:
+                return response.choices[0].message.content
+            else:
+                print("Error or no response from Ollama API")
+                return None
 
 
     
@@ -250,9 +269,6 @@ class Script(scripts.Script):
             generated_text = re.sub(r'\(([^)]*):[\d\.]*\)', r'\1', generated_text)
             generated_text = re.sub(r'(\w+):[\d\.]*(?=[ ,]|$)', r'\1', generated_text)
         
-
-
-
         for word in not_allowed_words:
             word_regex = r'\b' + re.escape(word) + r'\b'
             generated_text = re.sub(word_regex, '', generated_text, flags=re.IGNORECASE)
@@ -293,53 +309,43 @@ class Script(scripts.Script):
         if not character:
             character = "IFpromptMKR"
 
+        api_choice = shared.opts.data.get('api_choice', 'oobabooga').lower()
 
-        # Prepare the history with the user's input as the first message
         history = [{"role": "user", "content": prompt}]
 
-        data = {
-            #'user_input': prompt,
-            'messages': history,
-            'mode': "chat",
-            #'your_name': "You",
-            'character': character,
-            #'instruction_template': instruction_template,
-            #'preset': preset,
-            #'regenerate': False,
-            #'_continue': False,
-            #'stop_at_newline': False,
-            #'chat_prompt_size': 2048,
-            #'chat_generation_attempts': 1,
-            #'chat-instruct_command': 'Act like a prompt creator, brake keywords by comas, provide high quality, non-verboose, coherent, brief, concise, and not superfluous prompts, Only write the visuals elements of the picture, Never write art commentaries or intentions. Construct the prompt with the componet format, Always include all the keywords from the request verbatim as the main subject of the response: "".\n\n',
-            #'seed': -1,
-            #'add_bos_token': True,
-            #'custom_stopping_strings': [stopping,],
-            #'truncation_length': 2048,
-            #'ban_eos_token': False,
-        }
-        headers = {
-            "Content-Type": "application/json"
-        }
+        directive_message = "Act like a prompt creator, break keywords by commas, provide high quality, non-verbose, coherent, brief, concise, and not superfluous prompts. Only write the visuals elements of the picture, never write art commentaries or intentions. Construct the prompt with the component format, always include all the keywords from the request verbatim as the main subject of the response. The subject of the prompt is: "
 
-        if prompt_per_image:
-            for i in range( batch_count * batch_size):
-                generated_text = self.send_request(data, headers)
+        if api_choice == 'ollama':
+            ollama_model = shared.opts.data.get('ollama_model', 'impactframes/stable_diffusion_prompt_maker')
+            if ollama_model != 'impactframes/stable_diffusion_prompt_maker':
+                history[0]["content"] = directive_message + prompt
+            data = {'messages': history} 
+        else:  
+            data = {
+                'messages': history,
+                'mode': "chat",
+                'character': character,
+            }
+            headers = {
+                "Content-Type": "application/json"
+            }
+
+        if api_choice == 'oobabooga':
+            for i in range(batch_count * batch_size if prompt_per_image else batch_count):
+                generated_text = self.send_request(data, headers={"Content-Type": "application/json"})
                 if generated_text:
                     processed_text = self.process_text(generated_text, not_allowed_words, remove_weights, remove_author)
                     generated_texts.append(processed_text)
-        elif prompt_per_batch:
-            for i in range( batch_count):
-                generated_text = self.send_request(data, headers)
+        elif api_choice == 'ollama':
+            for i in range(batch_count * batch_size if prompt_per_image else batch_count):
+                generated_text = self.send_request(data, ollama_model=ollama_model)
                 if generated_text:
                     processed_text = self.process_text(generated_text, not_allowed_words, remove_weights, remove_author)
                     generated_texts.append(processed_text)
-        elif default_mode:
-            generated_text = self.send_request(data, headers)
-            if generated_text:
-                processed_text = self.process_text(generated_text, not_allowed_words, remove_weights, remove_author)
-                generated_texts.append(processed_text)
 
         return generated_texts
+
+
 
 
     def run(self, p, selected_character, prompt_prefix, input_prompt, prompt_subfix, dynamic_excluded_words, negative_prompt, prompt_mode, batch_count, batch_size, remove_weights, remove_author, *args, **kwargs):
