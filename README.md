@@ -23,6 +23,15 @@ https://civitai.com/user/impactframes/models
 [![YouTube Video](https://img.youtube.com/vi/dg_8cGzzfY4/0.jpg)](https://youtu.be/dg_8cGzzfY4)
 [![YouTube Video](https://img.youtube.com/vi/Y1E_y7ZrX5w/0.jpg)](https://youtu.be/Y1E_y7ZrX5w)
 
+I added ollama to the extension you can now use ollama with GGUF models 
+
+https://ollama.com/impactframes/stable_diffusion_prompt_maker
+
+![E2KbChbUiY](https://github.com/if-ai/IF_prompt_MKR/assets/21185218/46b05d8e-5a5f-4435-8e1b-a8268517de12)
+![Uploading thorium_mR5sOSwOzM.png…]()
+![Uploading thorium_G0cmuGGY5h.png…]()
+
+
 Please move the Characters from the A1111 extension 
 \stable-diffusion-webui\extensions\IF_prompt_MKR\characters 
 to
