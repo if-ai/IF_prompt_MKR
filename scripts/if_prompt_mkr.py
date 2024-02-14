@@ -7,12 +7,22 @@ import copy
 import re
 import modules
 import unicodedata
+import base64
+import io
+import tempfile
+
 from modules import images, script_callbacks, shared
 from modules.processing import Processed, process_images
 from modules.shared import state
 from scripts.extrafiles import get_negative, get_excluded_words
 from scripts.modeltags import get_loras, get_embeddings, get_lora_trigger_words, get_embedding_trigger_words, get_trigger_files
 from openai import OpenAI
+
+from PIL import Image 
+from pathlib import Path
+
+
+#from openai.error import OpenAIError
 
 script_dir = scripts.basedir()
 
@@ -50,7 +60,7 @@ class Script(scripts.Script):
     
     
     def ui(self, is_img2img):
-
+        
         def get_character_list():
             character_path = shared.opts.data.get("character_path", None)
 
@@ -62,12 +72,9 @@ class Script(scripts.Script):
             else:
                 return []
 
-        
+        character_list = get_character_list()
 
         neg_prompts = get_negative(os.path.join(script_dir, "negfiles"))
-
-
-        character_list = get_character_list()
 
 
         params = {
@@ -83,11 +90,14 @@ class Script(scripts.Script):
             'exclude_words': [],
             'remove_weights': False,
             'remove_author': False,
+            'vision_models': [],
+            'selected_model': 'default_model'
         }
 
         prompt_prefix_value = params['prompt_prefix']
         prompt_subfix_value = params['prompt_subfix']
 
+        current_model = 'default_model'
 
         
         def on_neg_prompts_change(x):
@@ -152,6 +162,136 @@ class Script(scripts.Script):
 
             return new_prompt_prefix
         
+        def update_model_list(select_vision_model):
+            api_choice = shared.opts.data.get('api_choice', 'Oobabooga').lower()
+            base_ip = shared.opts.data.get('base_ip', '127.0.0.1')
+            params['vision_models'] = []
+
+            if api_choice == 'ollama':
+                port = shared.opts.data.get('ollama_port', '11434')
+                api_url = f'http://{base_ip}:{port}/api/tags'
+                try:
+                    response = requests.get(api_url)
+                    response.raise_for_status()
+                    params['vision_models'] = [model['name'] for model in response.json()['models']]
+                except Exception as e:
+                    print(f"Failed to fetch models from Ollama: {e}")
+
+            elif api_choice == 'oobabooga':
+                port = shared.opts.data.get('oobabooga_port', '5000')
+                URI = f'http://{base_ip}:{port}/v1/internal/model/list'
+                try:
+                    response = requests.get(URI)
+                    response.raise_for_status()
+                    params['vision_models'] = response.json().get('model_names', [])
+                except Exception as e:
+                    print(f"Failed to fetch models from Oobabooga: {e}")
+            select_vision_model.choices = params['vision_models']
+            if params['selected_model'] not in params['vision_models']:
+                if params['vision_models']: 
+                    params['selected_model'] = params['vision_models'][0]
+                else:
+                    params['selected_model'] = "Default"
+            select_vision_model.value = params['selected_model']
+
+            return params['vision_models']
+
+
+        def on_model_selected(selected_model_name):
+            global current_model
+            current_model = selected_model_name
+            print("Model Selected:", current_model)
+
+        def load_model_oobabooga(model_name, base_ip='127.0.0.1', port='5000'):
+            global current_model
+            model_name = current_model
+            uri = f'http://{base_ip}:{port}/v1/internal/model/load'
+            headers = {"Content-Type": "application/json"}
+            data = {
+                "model_name": model_name,
+                "args": {"multimodal-pipeline": 'llava-v1.5-7b', "load_in_4bit": True },  
+                "settings": {"instruction_template": 'LLaVA' }
+            }
+            try:
+                response = requests.post(uri, headers=headers, json=data)
+                if response.status_code == 200:
+                    print("Model loaded successfully.")
+                    return True
+                else:
+                    print(f"Failed to load model, status code: {response.status_code}")
+                    return False
+            except Exception as e:
+                print(f"Error while loading model: {e}")
+                return False
+        
+
+        def describe_picture(image, image_prompt):
+            global current_model
+            selected_model = current_model
+            print("You are using the " + selected_model + " model, Make sure it is a vision or multy modal model")
+    
+            image_path = Path.home() / "image_prompt.jpg"
+            image.save(str(image_path))
+
+            with open(image_path, "rb") as image_file:
+                base64_image = base64.b64encode(image_file.read()).decode('utf-8')
+            if image_prompt: 
+                system_message = "Please analyze the image and respond to the user's question."
+                user_message = image_prompt 
+            else:
+                system_message = "You are a SD prompt maker, Describe the image in vivid detail as if you were describing it to a blind person. You must format it as keywords separated by commas, keywords can be single words or multi-word keywords and they have a specific order component. A typical format for the components looks like this [Adjectives], [Type], [Framing], [Shot], [subject],[Descriptor],[Descriptor],[Descriptor], [Expression], [Pose], [Action], [Environment], [Details], [Lighting], [Medium], [Aesthetics], [Visual], [Artist]. Be varied and creative, do not use standard or obvious subjects. You can include up to three keywords for each component or omit a component if it fits the subject or overall theme and keep the prompt coherent. Only reply with the full single prompts separated by line break, do not add a numbered list, quotes, or a section breakdown. Do not reply in natural language, only reply breaking keywords separated by commas. Do not try to be grammatically correct. Remember to be concise and not superfluous. Do not add brackets on the response, Use your superior art knowledge to find the best keywords that will create the best results by matching the style, artist, and keywords. The output should follow this scheme [best quality, Epic, highly detailed, Lara Croft, holds relic statue made of gold, facing a group of male savages, temple, two-tone lighting, dim light, ink, markers, cinematic, Scott Campbell, Jim Lee, Joe Madureira]"
+                user_message = f"Provide an SD prompt to describe the following image {str(image_path)}"
+
+            api_choice = shared.opts.data.get('api_choice', 'Ollama').lower()
+            base_ip = shared.opts.data.get('base_ip', '127.0.0.1')
+            headers = {"Content-Type": "application/json"}
+
+            if api_choice == 'ollama':
+                port = shared.opts.data.get('ollama_port', '11434')
+                api_url = f'http://{base_ip}:{port}/api/generate'
+
+                data = {
+                    "model": selected_model,
+                    "system": system_message,
+                    "prompt": user_message, 
+                    "stream": False,
+                    "images": [base64_image]
+                }
+
+                try:
+                    response = requests.post(api_url, headers=headers, json=data)
+                    if response.status_code == 200:
+                        response_data = response.json()
+                        prompt_response = response_data.get('response', 'No response text found')
+                        print("Extracted Response:", prompt_response)
+                        
+                        return prompt_response
+                    else:
+                        return f"Failed to generate prompt based on the image, status code: {response.status_code}"
+                except Exception as e:
+                    print(f"Error: {e}")
+                    return "Failed to generate prompt based on the image"
+                        
+            elif api_choice == 'oobabooga':
+                port = shared.opts.data.get('oobabooga_port', '5000')
+                HOST = f"{base_ip}:{port}"
+                if load_model_oobabooga(selected_model, base_ip, port):
+                    URI = f'http://{HOST}/v1/chat/completions'
+                    data = {
+                        'model': selected_model,
+                        'messages': [{"role": "assistant", "content": system_message}, {"role": "user", "content": user_message, "images": [base64_image]}]
+                    }
+
+                    try:
+                        response = requests.post(URI, headers=headers, json=data)
+                        if response.status_code == 200:
+                            prompt_response = response.json()['choices'][0]['message']['content']
+                            return prompt_response
+                        else:
+                            return f"Failed to generate prompt based on the image, status code: {response.status_code}"
+                    except Exception as e:
+                        print(f"Error: {e}")
+                        return "Failed to generate prompt based on the image"
 
      
         with gr.Row(scale=1, min_width=400):
@@ -199,7 +339,32 @@ class Script(scripts.Script):
             with gr.Column(scale=1, min_width=100):
                 get_triger_files = gr.Button("Get All Trigger Files", elem_id="iF_prompt_MKR_get_triger_files")
                 message = gr.Textbox(lines=2, default="Creates a file with all the trigger words for each model (takes 3-5 seconds for each model you have) if you already have .civitai.info in your model folder, then you don't need to run this", label="Trigger Message")
-                
+        
+        with gr.Accordion('Vision MultiModal', open=True):
+            with gr.Group():
+                with gr.Row():
+                    image_prompt = gr.Textbox(
+                        label="Analyse", placeholder="What would you call the style of this picture and who could be the artist?", scale=4
+                    )
+                    submit = gr.Button(
+                        "Submit",
+                        scale=1,
+                    )
+                with gr.Row():
+                    img = gr.Image(type="pil", label="Upload or Drag an Image")
+                    output = gr.TextArea(label="Response")  
+                    with gr.Row():
+                        select_vision_model = gr.Dropdown(label="Vision-Model", choices=[], value=params['selected_model'])
+
+
+        select_vision_model.change(lambda x: params.update({'selected_model': x}), select_vision_model, None)
+        update_model_list(select_vision_model)
+        
+        select_vision_model.change(on_model_selected, select_vision_model, None)
+
+        submit.click(describe_picture, [img, image_prompt], output)
+        image_prompt.submit(describe_picture, [img, image_prompt], output)
+    
 
         selected_character.change(lambda x: params.update({'selected_character': x}), selected_character, None)
         prompt_prefix.change(lambda x: params.update({'prompt_prefix': x}), prompt_prefix, None)
@@ -325,6 +490,7 @@ class Script(scripts.Script):
                 'messages': history,
                 'mode': "chat",
                 'character': character,
+                'preset': preset,
             }
             headers = {
                 "Content-Type": "application/json"
@@ -344,8 +510,6 @@ class Script(scripts.Script):
                     generated_texts.append(processed_text)
 
         return generated_texts
-
-
 
 
     def run(self, p, selected_character, prompt_prefix, input_prompt, prompt_subfix, dynamic_excluded_words, negative_prompt, prompt_mode, batch_count, batch_size, remove_weights, remove_author, *args, **kwargs):
