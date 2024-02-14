@@ -1,5 +1,5 @@
 # IF_prompt_MKR
-An A1111 extension to let the AI make prompts for SD using Oobabooga
+An A1111, SD Next & Forge extension to let the AI make prompts for SD using Oobabooga TGWui or Ollama 
 characters work on exllama with superHOT and ofcourse IF_PromptMKR_GPTQ Model
 https://huggingface.co/impactframes/IF_PromptMKR_GPTQ
 
@@ -11,6 +11,14 @@ you need
 api --listen-port 7861 --listen
 On Oobabooga 
 and in automatic --api
+
+Supports LLaVA Vision Multimodal 
+(๑ᵔ⤙ᵔ๑) Make prompts
+![thorium_CRGzcriKIq](https://github.com/if-ai/IF_prompt_MKR/assets/21185218/1190d9e8-7ded-452a-9c7f-ff26bee3fa8a)
+![mEOwDwAGvA](https://github.com/if-ai/IF_prompt_MKR/assets/21185218/87c1e35b-d25b-459e-a79b-168ae47d85ba)
+(ㅅ´ ˘ `) Ask questions
+![thorium_R6xzbnwvnh](https://github.com/if-ai/IF_prompt_MKR/assets/21185218/ec9bac93-6233-4102-bf35-0c60ae4b59ad)
+Probably will add Captioning features
 
 Move the characters from the extension folder to your oobabooga Character Folder and place the script on extensions or install it from url inside A1111
 
