@@ -12,6 +12,14 @@ api --listen-port 7861 --listen
 On Oobabooga 
 and in automatic --api
 
+
+New Batch captioner / LLava Dataset Maker Ollama Only Until TGWUI supports LLAVA1.6
+![DZUCzyqWjk](https://github.com/if-ai/IF_prompt_MKR/assets/21185218/71b7ff6b-c020-4379-9abd-100c4322b6fe)
+Editable Styles Tab
+![thorium_zdWmQGRgXj](https://github.com/if-ai/IF_prompt_MKR/assets/21185218/1bbce8a6-4723-4fb0-a097-87c51c718a2d)
+Model Selector Ollama Only
+![thorium_Moeau89JxA](https://github.com/if-ai/IF_prompt_MKR/assets/21185218/dcbd3307-1ab2-46d1-9363-6283b1ea494c)
+
 Supports LLaVA Vision Multimodal 
 (๑ᵔ⤙ᵔ๑) Make prompts
 ![thorium_CRGzcriKIq](https://github.com/if-ai/IF_prompt_MKR/assets/21185218/1190d9e8-7ded-452a-9c7f-ff26bee3fa8a)
