@@ -10,7 +10,9 @@ import unicodedata
 import base64
 import io
 import tempfile
-
+import textwrap
+import glob
+import uuid
 from modules import images, script_callbacks, shared
 from modules.processing import Processed, process_images
 from modules.shared import state
@@ -21,8 +23,6 @@ from openai import OpenAI
 from PIL import Image 
 from pathlib import Path
 
-
-#from openai.error import OpenAIError
 
 script_dir = scripts.basedir()
 
@@ -37,18 +37,11 @@ def on_ui_settings():
       "5000", "Port for Oobabooga API. Default is '5000'.", section=section))
     shared.opts.add_option("ollama_port", shared.OptionInfo(
       "11434", "Port for Ollama API. Default is '11434'.", section=section))
-    shared.opts.add_option("ollama_model", shared.OptionInfo(
-      "impactframes/stable_diffusion_prompt_maker", "Model name for the Ollama API. Default is 'impactframes/stable_diffusion_prompt_maker'.", section=section))
     shared.opts.add_option("character_path", shared.OptionInfo(
-      "", 'Select Ooga characters folder X:\oobabooga_windows\text-generation-webui\characters to list all the json characters you have installed', section=section))
+      "", 'Select TGWUI characters folder X:\Text-generation-webui\characters to list all the json characters you have installed', section=section))
     shared.opts.add_option("preset", shared.OptionInfo(
       "", 'Select a Yaml preset from oobabooga The default is "IF_promptMKR_preset" do not add the extension and use the double quotes', section=section))
-    shared.opts.add_option("instruction_template", shared.OptionInfo(
-      "", 'Set a instruction template of the Model default is "Wizard-Mega" i.e Vicuna-v1.1, WizardLM, Wizard-Mega, Alpaca, use the double quotes', section=section))
-    shared.opts.add_option("stopping_string", shared.OptionInfo(
-      "", 'Write a custom stopping string default is "### Assistant:" ', section=section))
     
-
 script_callbacks.on_ui_settings(on_ui_settings)
 
 
@@ -75,6 +68,9 @@ class Script(scripts.Script):
         character_list = get_character_list()
 
         neg_prompts = get_negative(os.path.join(script_dir, "negfiles"))
+        embellish_prompts = get_negative(os.path.join(script_dir, "embellishfiles"))
+        style_prompts = get_negative(os.path.join(script_dir, "stylefiles"))
+
 
 
         params = {
@@ -82,6 +78,8 @@ class Script(scripts.Script):
             'prompt_prefix': '',
             'input_prompt': '(CatGirl warrior:1.2), legendary sword,',
             'negative_prompt': '(nsfw), (worst quality, low quality:1.4), ((text, signature, captions):1.3),',
+            'embellish_prompts': '',
+            'style_prompts': '',
             'prompt_subfix': '',
             'prompt_per_batch': False,
             'prompt_per_image': False,
@@ -90,14 +88,17 @@ class Script(scripts.Script):
             'exclude_words': [],
             'remove_weights': False,
             'remove_author': False,
+            'text_models': [],
             'vision_models': [],
-            'selected_model': 'default_model'
+            'selected_vision_model': 'default_model', 
+            'selected_text_model': 'default_model'
         }
 
         prompt_prefix_value = params['prompt_prefix']
         prompt_subfix_value = params['prompt_subfix']
 
-        current_model = 'default_model'
+        current_vision_model = 'default_model'
+        current_text_model = 'default_model'
 
         
         def on_neg_prompts_change(x):
@@ -112,6 +113,28 @@ class Script(scripts.Script):
 
             return new_neg_prompt
         
+        def on_embellishments_change(x):
+            
+            filename = embellish_prompts[x][1]
+
+            with open(filename, 'r') as file:
+                new_embellish_prompt = file.read()
+
+            params.update({'embellish_prompt': str(new_embellish_prompt)})
+            embellish_prompt.value = str(new_embellish_prompt)
+
+            return new_embellish_prompt
+        
+        def on_styles_change(x):
+            filename = style_prompts[x][1]
+
+            with open(filename, 'r') as file:
+                new_style_prompt = file.read()
+
+            params.update({'style_prompt': str(new_style_prompt)})
+            style_prompt.value = str(new_style_prompt)  
+
+            return new_style_prompt       
 
         def on_apply_lora(lora_model):
             if lora_model is None:
@@ -137,7 +160,6 @@ class Script(scripts.Script):
 
             return new_prompt_subfix
 
-
         def on_apply_embedding(embedding_model):
             if embedding_model is None:
                 print("No embedding selected.")
@@ -162,7 +184,7 @@ class Script(scripts.Script):
 
             return new_prompt_prefix
         
-        def update_model_list(select_vision_model):
+        def update_vision_model_list(select_vision_model):
             api_choice = shared.opts.data.get('api_choice', 'Oobabooga').lower()
             base_ip = shared.opts.data.get('base_ip', '127.0.0.1')
             params['vision_models'] = []
@@ -187,28 +209,66 @@ class Script(scripts.Script):
                 except Exception as e:
                     print(f"Failed to fetch models from Oobabooga: {e}")
             select_vision_model.choices = params['vision_models']
-            if params['selected_model'] not in params['vision_models']:
+            if params['selected_vision_model'] not in params['vision_models']:
                 if params['vision_models']: 
-                    params['selected_model'] = params['vision_models'][0]
+                    params['selected_vision_model'] = params['vision_models'][0]
                 else:
-                    params['selected_model'] = "Default"
-            select_vision_model.value = params['selected_model']
+                    params['selected_vision_model'] = "Default"
+            select_vision_model.value = params['selected_vision_model']
 
             return params['vision_models']
+        
+        def update_text_model_list(select_text_model):
+            api_choice = shared.opts.data.get('api_choice', 'Oobabooga').lower()
+            base_ip = shared.opts.data.get('base_ip', '127.0.0.1')
+            params['text_models'] = []
 
+            if api_choice == 'ollama':
+                port = shared.opts.data.get('ollama_port', '11434')
+                api_url = f'http://{base_ip}:{port}/api/tags'
+                try:
+                    response = requests.get(api_url)
+                    response.raise_for_status()
+                    params['text_models'] = [model['name'] for model in response.json()['models']]
+                except Exception as e:
+                    print(f"Failed to fetch models from Ollama: {e}")
 
-        def on_model_selected(selected_model_name):
-            global current_model
-            current_model = selected_model_name
-            print("Model Selected:", current_model)
+            elif api_choice == 'oobabooga':
+                port = shared.opts.data.get('oobabooga_port', '5000')
+                URI = f'http://{base_ip}:{port}/v1/internal/model/list'
+                try:
+                    response = requests.get(URI)
+                    response.raise_for_status()
+                    params['text_models'] = response.json().get('model_names', [])
+                except Exception as e:
+                    print(f"Failed to fetch models from Oobabooga: {e}")
+            select_text_model.choices = params['text_models']
+            if params['selected_text_model'] not in params['text_models']:
+                if params['text_models']: 
+                    params['selected_text_model'] = params['text_models'][0]
+                else:
+                    params['selected_text_model'] = "Default"
+            select_text_model.value = params['selected_text_model']
 
-        def load_model_oobabooga(model_name, base_ip='127.0.0.1', port='5000'):
-            global current_model
-            model_name = current_model
+            return params['text_models']
+        
+        def on_text_model_selected(selected_text_model_name):
+            global current_text_model
+            current_text_model = selected_text_model_name
+            print("Text Model Selected:", current_text_model)
+
+        def on_vision_model_selected(selected_vision_model_name):
+            global current_vision_model
+            current_vision_model = selected_vision_model_name
+            print("Vision Model Selected:", current_vision_model)
+           
+        def load_model_oobabooga(selected_vision_model_name, base_ip='127.0.0.1', port='5000'):
+            global current_vision_model
+            selected_vision_model_name = current_vision_model
             uri = f'http://{base_ip}:{port}/v1/internal/model/load'
             headers = {"Content-Type": "application/json"}
             data = {
-                "model_name": model_name,
+                "model_name": selected_vision_model_name,
                 "args": {"multimodal-pipeline": 'llava-v1.5-7b', "load_in_4bit": True },  
                 "settings": {"instruction_template": 'LLaVA' }
             }
@@ -223,25 +283,95 @@ class Script(scripts.Script):
             except Exception as e:
                 print(f"Error while loading model: {e}")
                 return False
-        
+        def get_images(directory):
+            image_paths = []
+            for filename in os.listdir(directory):
+                if not filename.endswith(':Zone.Identifier'):
+                    full_path = os.path.join(directory, filename)
+                    image_paths.append(full_path)
+            return image_paths
 
-        def describe_picture(image, image_prompt):
-            global current_model
-            selected_model = current_model
-            print("You are using the " + selected_model + " model, Make sure it is a vision or multy modal model")
-    
-            image_path = Path.home() / "image_prompt.jpg"
-            image.save(str(image_path))
+        
+        def batch_describe_pictures(common_image_prompt):
+            image_directory = os.path.join(script_dir, "put_caption_images_here")
+            image_paths = get_images(image_directory)
+            dataset = []
+
+            for image_path in image_paths:
+                image = Image.open(image_path)  # Ensure this is an image object
+                image_file_name = os.path.basename(image_path)
+                caption = describe_picture(image, common_image_prompt)  # Correct order of parameters
+
+                entry = {
+                    "id": str(uuid.uuid4()),
+                    "image": image_file_name,
+                    "conversations": [
+                        {
+                            "from": "human",
+                            "value": "<image>\nWrite a prompt for Stable Diffusion to generate this image."
+                        },
+                        {
+                            "from": "gpt",
+                            "value": caption
+                        },
+                    ]
+                }
+                dataset.append(entry)
+
+            json_filename = 'llava_dataset.json'
+            with open(os.path.join(image_directory, json_filename), 'w') as f:
+                json.dump(dataset, f, indent=4)
+
+            return json_filename
+
+        def process_single_image(image, prompt):
+            caption = describe_picture(image, prompt)
+            return caption
+        def describe_picture(image, image_prompt=None):
+            global current_vision_model
+            selected_model = current_vision_model
+            print(f"You are using the {selected_model} model, make sure it is a vision or multimodal model")
+
+            with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as image_file:
+                image.save(image_file, format='JPEG')
+                image_path = image_file.name
 
             with open(image_path, "rb") as image_file:
                 base64_image = base64.b64encode(image_file.read()).decode('utf-8')
-            if image_prompt: 
-                system_message = "Please analyze the image and respond to the user's question."
-                user_message = image_prompt 
-            else:
-                system_message = "You are a SD prompt maker, Describe the image in vivid detail as if you were describing it to a blind person. You must format it as keywords separated by commas, keywords can be single words or multi-word keywords and they have a specific order component. A typical format for the components looks like this [Adjectives], [Type], [Framing], [Shot], [subject],[Descriptor],[Descriptor],[Descriptor], [Expression], [Pose], [Action], [Environment], [Details], [Lighting], [Medium], [Aesthetics], [Visual], [Artist]. Be varied and creative, do not use standard or obvious subjects. You can include up to three keywords for each component or omit a component if it fits the subject or overall theme and keep the prompt coherent. Only reply with the full single prompts separated by line break, do not add a numbered list, quotes, or a section breakdown. Do not reply in natural language, only reply breaking keywords separated by commas. Do not try to be grammatically correct. Remember to be concise and not superfluous. Do not add brackets on the response, Use your superior art knowledge to find the best keywords that will create the best results by matching the style, artist, and keywords. The output should follow this scheme [best quality, Epic, highly detailed, Lara Croft, holds relic statue made of gold, facing a group of male savages, temple, two-tone lighting, dim light, ink, markers, cinematic, Scott Campbell, Jim Lee, Joe Madureira]"
-                user_message = f"Provide an SD prompt to describe the following image {str(image_path)}"
 
+            system_message = textwrap.dedent("""\
+            Act as a visual prompt maker with the following guidelines:
+            - Describe the image in vivid detail.
+            - Break keywords by commas.
+            - Provide high-quality, non-verbose, coherent, concise, and not superfluous descriptions.
+            - Focus solely on the visual elements of the picture; avoid art commentaries or intentions.
+            - Construct the prompt by describing framing, subjects, scene elements, background, aesthetics.
+            - Limit yourself up to 7 keywords per component  
+            - Be varied and creative.
+            - Always reply on the same line, use around 100 words long. 
+            - Do not enumerate or enunciate components.
+            - Do not include any additional information in the response.                                                       
+            The following is an illustartive example for you to see how to construct a prompt your prompts should follow this format but always coherent to the subject worldbuilding or setting and consider the elements relationship:
+            'Epic, Cover Art, Full body shot, dynamic angle, A Demon Hunter, standing, lone figure, glow eyes, deep purple light, cybernetic exoskeleton, sleek, metallic, glowing blue accents, energy weapons. Fighting Demon, grotesque creature, twisted metal, glowing red eyes, sharp claws, Cyber City, towering structures, shrouded haze, shimmering energy. Ciberpunk, dramatic lighthing, highly detailed. ' 
+            Make a visual prompt for the following Image:
+            """) if not image_prompt else "Please analyze the image and respond to the user's question."
+            user_message = image_prompt if image_prompt else textwrap.dedent("""\
+            Act as a visual prompt maker with the following guidelines:
+            - Describe the image in vivid detail.
+            - Break keywords by commas.
+            - Provide high-quality, non-verbose, coherent, concise, and not superfluous descriptions.
+            - Focus solely on the visual elements of the picture; avoid art commentaries or intentions.
+            - Construct the prompt by describing framing, subjects, scene elements, background, aesthetics.
+            - Limit yourself up to 7 keywords per component  
+            - Be varied and creative.
+            - Always reply on the same line, use around 100 words long. 
+            - Do not enumerate or enunciate components.
+            - Do not include any additional information in the response.                                                       
+            The following is an illustartive example for you to see how to construct a prompt your prompts should follow this format but always coherent to the subject worldbuilding or setting and consider the elements relationship:
+            'Epic, Cover Art, Full body shot, dynamic angle, A Demon Hunter, standing, lone figure, glow eyes, deep purple light, cybernetic exoskeleton, sleek, metallic, glowing blue accents, energy weapons. Fighting Demon, grotesque creature, twisted metal, glowing red eyes, sharp claws, Cyber City, towering structures, shrouded haze, shimmering energy. Ciberpunk, dramatic lighthing, highly detailed. ' 
+            Make a visual prompt for the following Image:
+            """)
+            
             api_choice = shared.opts.data.get('api_choice', 'Ollama').lower()
             base_ip = shared.opts.data.get('base_ip', '127.0.0.1')
             headers = {"Content-Type": "application/json"}
@@ -258,20 +388,24 @@ class Script(scripts.Script):
                     "images": [base64_image]
                 }
 
+                headers = {"Content-Type": "application/json"}
                 try:
                     response = requests.post(api_url, headers=headers, json=data)
                     if response.status_code == 200:
                         response_data = response.json()
                         prompt_response = response_data.get('response', 'No response text found')
-                        print("Extracted Response:", prompt_response)
+                        print(f"Caption for image {os.path.basename(image_path)}: {prompt_response}")
                         
+                        # Clean up the temporary file
+                        os.unlink(image_path)
                         return prompt_response
                     else:
-                        return f"Failed to generate prompt based on the image, status code: {response.status_code}"
+                        print(f"Failed to generate prompt based on the image, status code: {response.status_code}")
+                        return f"Failed to generate prompt for image {os.path.basename(image_path)}"
                 except Exception as e:
-                    print(f"Error: {e}")
-                    return "Failed to generate prompt based on the image"
-                        
+                    print(f"Error while generating caption: {e}")
+                    return f"Error while generating caption for image {os.path.basename(image_path)}"
+          
             elif api_choice == 'oobabooga':
                 port = shared.opts.data.get('oobabooga_port', '5000')
                 HOST = f"{base_ip}:{port}"
@@ -291,18 +425,44 @@ class Script(scripts.Script):
                             return f"Failed to generate prompt based on the image, status code: {response.status_code}"
                     except Exception as e:
                         print(f"Error: {e}")
-                        return "Failed to generate prompt based on the image"
+                        return "Failed to generate prompt based on the image"    
+      
 
-     
-        with gr.Row(scale=1, min_width=400):
-            selected_character = gr.Dropdown(label="characters", choices=params['selected_character']) 
-            with gr.Row():
-                prompt_mode = gr.Radio(['Default', 'Per Image', 'Per Batch'], label='Prompt Mode', value='Default')
-        with gr.Row(scale=1, min_width=400):
-            input_prompt = gr.Textbox(lines=1, label="Input Prompt", value='(CatGirl warrior:1.2), legendary sword,', elem_id="iF_prompt_MKR_input_prompt")     
-            with gr.Row():
-                batch_count = gr.Number(label="Batch count:", value=params['batch_count'])
-                batch_size = gr.Slider(1, 8, value=params['batch_size'], step=1, label='batch size')
+        with gr.Accordion('Text Model', open=True):
+            with gr.Group():
+                with gr.Row(scale=1):
+                        with gr.Column(scale=1, min_width=100):
+                            selected_character = gr.Dropdown(label="characters", choices=params['selected_character']) 
+                        with gr.Column(scale=1, min_width=100):
+                            select_text_model = gr.Dropdown(label="Text-Model", choices=[], value=params['selected_text_model'])
+                        
+                with gr.Row(scale=2, min_width=400):
+                    input_prompt = gr.Textbox(lines=1, label="Input Prompt", value='(CatGirl warrior:1.2), legendary sword,', elem_id="iF_prompt_MKR_input_prompt")     
+                    with gr.Row():
+                        prompt_mode = gr.Radio(['Default', 'Per Image', 'Per Batch'], label='Prompt Mode', value='Default')
+                        with gr.Column(scale=1, min_width=100):
+                            batch_count = gr.Number(label="Batch count:", value=params['batch_count'])
+                            batch_size = gr.Slider(1, 8, value=params['batch_size'], step=1, label='batch size')
+
+        with gr.Accordion('Styling(Optional)', open=True):
+            with gr.Group():
+                with gr.Row():
+                    with gr.Column(scale=1, min_width=100):
+                        embellish_prompt = gr.Textbox(lines=2, label="embellish Prompt", elem_id="iF_prompt_MKR_embellish_prompt")
+                        embellish_prompts_dropdown = gr.Dropdown(
+                            label="embellish Prompts",
+                            choices=[e[0] for e in embellish_prompts],
+                            type="index",
+                            elem_id="iF_prompt_MKR_embellish_prompts_dropdown"
+                        )
+                    with gr.Column(scale=1, min_width=100):
+                        style_prompt = gr.Textbox(lines=2, label="Style Prompt", elem_id="iF_prompt_MKR_style_prompt")
+                        style_prompts_dropdown = gr.Dropdown(
+                            label="Style Prompts",
+                            choices=[s[0] for s in style_prompts],
+                            type="index",
+                            elem_id="iF_prompt_MKR_style_prompts_dropdown"
+                        )     
          
         with gr.Accordion('Prefix & TIembeddings', open=True):
             ti_choices = ["None"]
@@ -330,7 +490,6 @@ class Script(scripts.Script):
                 type="index", 
                 elem_id="iF_prompt_MKR_neg_prompts_dropdown")
              
-
         with gr.Row():
             with gr.Column(scale=1, min_width=400):
                 dynamic_excluded_words = gr.Textbox(lines=1, placeholder="Enter case-sensitive words to exclude, separated by commas", label="Excluded Words")
@@ -354,18 +513,27 @@ class Script(scripts.Script):
                     img = gr.Image(type="pil", label="Upload or Drag an Image")
                     output = gr.TextArea(label="Response")  
                     with gr.Row():
-                        select_vision_model = gr.Dropdown(label="Vision-Model", choices=[], value=params['selected_model'])
-
-
-        select_vision_model.change(lambda x: params.update({'selected_model': x}), select_vision_model, None)
-        update_model_list(select_vision_model)
+                        select_vision_model = gr.Dropdown(label="Vision-Model", choices=[], value=params['selected_vision_model'])
         
-        select_vision_model.change(on_model_selected, select_vision_model, None)
+        with gr.Accordion('Batch Image Captioner', open=False):
+            with gr.Group():
+                with gr.Row():
+                    common_image_prompt = gr.Textbox(label="Ask a custom prompt", placeholder="Enter a common prompt for all images (optional)")
+                    with gr.Column(scale=1, min_width=100):
+                        batch_caption_button = gr.Button("Generate Captions for All Images in Folder")
+                        batch_caption_result = gr.Textbox(label="When completed the Filename will appear here &on the image folder", interactive=False)
+                
 
+        batch_caption_button.click(batch_describe_pictures, inputs=[common_image_prompt], outputs=[batch_caption_result])
+        select_text_model.change(lambda x: params.update({'selected_text_model': x}), select_text_model, None)
+        update_text_model_list(select_text_model)
+        select_text_model.change(on_text_model_selected, select_text_model, None)
+        select_vision_model.change(lambda x: params.update({'selected_vision_model': x}), select_vision_model, None)
+        update_vision_model_list(select_vision_model)
+        select_vision_model.change(on_vision_model_selected, select_vision_model, None)
         submit.click(describe_picture, [img, image_prompt], output)
         image_prompt.submit(describe_picture, [img, image_prompt], output)
-    
-
+        batch_caption_button.click(batch_describe_pictures, inputs=[common_image_prompt], outputs=[batch_caption_result])
         selected_character.change(lambda x: params.update({'selected_character': x}), selected_character, None)
         prompt_prefix.change(lambda x: params.update({'prompt_prefix': x}), prompt_prefix, None)
         input_prompt.change(lambda x: params.update({'input_prompt': x}), input_prompt, None)
@@ -375,20 +543,21 @@ class Script(scripts.Script):
         remove_weights.change(lambda x: params.update({'remove_weights': x}), remove_weights, None)
         remove_author.change(lambda x: params.update({'remove_author': x}), remove_author, None)
         dynamic_excluded_words.change(lambda x: params.update({'dynamic_excluded_words': [word.strip() for word in x.split(',')] if x else []}), dynamic_excluded_words, None)
-        get_triger_files.click(get_trigger_files, inputs=[], outputs=[message])
-        
+        get_triger_files.click(get_trigger_files, inputs=[], outputs=[message]) 
+        style_prompts_dropdown.change(on_styles_change, style_prompts_dropdown, style_prompt)
+        style_prompt.change(lambda x: params.update({'style_prompt': x}), style_prompt, None)
+        embellish_prompts_dropdown.change(on_embellishments_change, embellish_prompts_dropdown, embellish_prompt)
+        embellish_prompt.change(lambda x: params.update({'embellish_prompt': x}), embellish_prompt, None)
         neg_prompts_dropdown.change(on_neg_prompts_change, neg_prompts_dropdown, negative_prompt)
         negative_prompt.change(lambda x: params.update({'negative_prompt': x}), negative_prompt, None)
-
         embedding_model.change(on_apply_embedding, inputs=[embedding_model], outputs=[prompt_prefix], )
         print("Embedding Model value:", embedding_model.value)
         lora_model.change(on_apply_lora, inputs=[lora_model], outputs=[prompt_subfix])
         print("LORA Model value:", lora_model.value)
         
-        return [selected_character, prompt_prefix, input_prompt, prompt_subfix, dynamic_excluded_words, negative_prompt, prompt_mode, batch_count, batch_size, remove_weights, remove_author]
+        return [selected_character, prompt_prefix, input_prompt, prompt_subfix, dynamic_excluded_words, negative_prompt, prompt_mode, batch_count, batch_size, remove_weights, remove_author, select_text_model, style_prompt, embellish_prompt ]
     
-
-    def send_request(self, data, **kwargs):
+    def send_request(self, data, headers, **kwargs):
         api_choice = shared.opts.data.get('api_choice', 'oobabooga').lower()
         base_ip = shared.opts.data.get('base_ip', '127.0.0.1')
         headers = kwargs.get('headers', {"Content-Type": "application/json"})
@@ -400,32 +569,19 @@ class Script(scripts.Script):
             response = requests.post(URI, headers=headers, json=data, verify=False)
         elif api_choice == 'ollama':
             port = shared.opts.data.get('ollama_port', '11434')
-            base_url = f'http://{base_ip}:{port}/v1'
-            ollama_model = kwargs.get('ollama_model', 'impactframes/stable_diffusion_prompt_maker')  
-            client = OpenAI(base_url=base_url, api_key='ollama')
-            response = client.chat.completions.create(
-                model=ollama_model,  
-                messages=data['messages']
-            )
+            base_url = f'http://{base_ip}:{port}/v1/chat/completions'
+            response = requests.post(base_url, headers=headers, json=data)
+
         
-        if api_choice == 'oobabooga':
-            if response.status_code == 200:
-                return response.json()['choices'][0]['message']['content']
-            else:
-                print(f"Error: Request to Oobabooga failed with status code {response.status_code}")
-                return None
-        elif api_choice == 'ollama':
-            if response is not None and hasattr(response, 'choices') and len(response.choices) > 0:
-                return response.choices[0].message.content
-            else:
-                print("Error or no response from Ollama API")
-                return None
+        if response.status_code == 200:
+            return response.json().get('choices', [{}])[0].get('message', {}).get('content', '')
+        else:
+            print(f"Error: Request to {api_choice} failed with status code {response.status_code}")
+            return None
 
-
-    
+ 
     def process_text(self, generated_text, not_allowed_words, remove_weights, remove_author):
 
-        
         if remove_author:
             generated_text = re.sub(r'\bby:.*', '', generated_text)
 
@@ -457,43 +613,56 @@ class Script(scripts.Script):
 
         return generated_text
 
-
-    def generate_text(self, p, character, prompt, not_allowed_words, prompt_per_image, prompt_per_batch, default_mode, batch_count, batch_size, remove_weights, remove_author):
+    def generate_text(self, p, selected_character, input_prompt, batch_count, batch_size, remove_weights, remove_author, not_allowed_words, prompt_per_image, select_text_model, *args, **kwargs):
         generated_texts = []
 
-        print(f"iF_prompt_MKR: Generating a text prompt using: {character}")
-        stopping = shared.opts.data.get("stopping_string", None)
-        if not stopping:
-            stopping = "### Assistant:"
+        print(f"iF_prompt_MKR: Generating a text prompt using: {selected_character}")
         preset = shared.opts.data.get("preset", None)
         if not preset:
             preset = 'IF_promptMKR_preset'
-        instruction_template = shared.opts.data.get("instruction_template", None)
-        if not instruction_template: 
-            instruction_template = 'Alpaca'
-        if not character:
-            character = "IFpromptMKR"
+        if not selected_character:
+            selected_character = "IFpromptMKR"
 
         api_choice = shared.opts.data.get('api_choice', 'oobabooga').lower()
 
-        history = [{"role": "user", "content": prompt}]
+        prime_directive = textwrap.dedent("""\
+            Act as a prompt maker with the following guidelines:
+            - Break keywords by commas.
+            - Provide high-quality, non-verbose, coherent, brief, concise, and not superfluous prompts.
+            - Focus solely on the visual elements of the picture; avoid art commentaries or intentions.
+            - Construct the prompt with the component format:
+            1. Start with the subject and keyword description.
+            2. Follow with scene keyword description.
+            3. Finish with background and keyword description.
+            - Limit yourself to no more than 7 keywords per component  
+            - Include all the keywords from the user's request verbatim as the main subject of the response.
+            - Be varied and creative.
+            - Always reply on the same line and no more than 100 words long. 
+            - Do not enumerate or enunciate components.
+            - Do not include any additional information in the response.                                                       
+            The followin is an illustartive example for you to see how to construct a prompt your prompts should follow this format but always coherent to the subject worldbuilding or setting and cosider the elemnts relationship.
+            Example:
+            Subject: Demon Hunter, Cyber City.
+            prompt: A Demon Hunter, standing, lone figure, glow eyes, deep purple light, cybernetic exoskeleton, sleek, metallic, glowing blue accents, energy weapons. Fighting Demon, grotesque creature, twisted metal, glowing red eyes, sharp claws, Cyber City, towering structures, shrouded haze, shimmering energy.                             
+            Make a prompt for the following Subject:
+            """)
 
-        directive_message = "Act like a prompt creator, break keywords by commas, provide high quality, non-verbose, coherent, brief, concise, and not superfluous prompts. Only write the visuals elements of the picture, never write art commentaries or intentions. Construct the prompt with the component format, always include all the keywords from the request verbatim as the main subject of the response. The subject of the prompt is: "
+        print(prime_directive)
 
         if api_choice == 'ollama':
-            ollama_model = shared.opts.data.get('ollama_model', 'impactframes/stable_diffusion_prompt_maker')
-            if ollama_model != 'impactframes/stable_diffusion_prompt_maker':
-                history[0]["content"] = directive_message + prompt
-            data = {'messages': history} 
+             data = {
+                'model': select_text_model,
+                'messages': [
+                    {"role": "system", "content": prime_directive},
+                    {"role": "user", "content": input_prompt}
+                ],  
+            }
         else:  
             data = {
-                'messages': history,
+                'messages': [{"role": "user", "content": input_prompt}],
                 'mode': "chat",
-                'character': character,
+                'character': selected_character,
                 'preset': preset,
-            }
-            headers = {
-                "Content-Type": "application/json"
             }
 
         if api_choice == 'oobabooga':
@@ -504,15 +673,14 @@ class Script(scripts.Script):
                     generated_texts.append(processed_text)
         elif api_choice == 'ollama':
             for i in range(batch_count * batch_size if prompt_per_image else batch_count):
-                generated_text = self.send_request(data, ollama_model=ollama_model)
+                generated_text = self.send_request(data, headers={"Content-Type": "application/json"})
                 if generated_text:
                     processed_text = self.process_text(generated_text, not_allowed_words, remove_weights, remove_author)
                     generated_texts.append(processed_text)
 
         return generated_texts
 
-
-    def run(self, p, selected_character, prompt_prefix, input_prompt, prompt_subfix, dynamic_excluded_words, negative_prompt, prompt_mode, batch_count, batch_size, remove_weights, remove_author, *args, **kwargs):
+    def run(self, p, selected_character, prompt_prefix, input_prompt, prompt_subfix, dynamic_excluded_words, negative_prompt, prompt_mode, batch_count, batch_size, remove_weights, remove_author, select_text_model, style_prompt, embellish_prompt, *args, **kwargs):
         prompts = []
         prompt_per_image = (prompt_mode == 'Per Image')
         prompt_per_batch = (prompt_mode == 'Per Batch')
@@ -521,15 +689,27 @@ class Script(scripts.Script):
         batch_size = int(batch_size) 
         excluded_path = os.path.join(script_dir, "excluded/excluded_words.txt")   
         not_allowed_words = get_excluded_words(dynamic_excluded_words, excluded_path)
-       
-        generated_texts = self.generate_text(p, selected_character, input_prompt, not_allowed_words, prompt_per_image, prompt_per_batch, default_mode, batch_count, batch_size, remove_weights, remove_author)
+        print(f"p: {p}")
+        print(f"selected_character: {selected_character}")
+        print(f"input_prompt: {input_prompt}")
+        print(f"batch_count: {batch_count}")
+        print(f"batch_size: {batch_size}")
+        print(f"remove_weights: {remove_weights}")
+        print(f"remove_author: {remove_author}")
+        print(f"not_allowed_words: {not_allowed_words}")
+        print(f"prompt_per_image: {prompt_per_image}")
+        print(f"select_text_model: {select_text_model}")
+
+
+        generated_texts = self.generate_text(p, selected_character, input_prompt, batch_count, batch_size, remove_weights, remove_author, not_allowed_words, prompt_per_image, select_text_model)
+
 
         if not generated_texts:
-            print(f"iF_prompt_MKR: No generated texts found for {selected_character}. Check if Oobabooga is running in API mode and the character is available in Oobabooga's character folder.")
+            print(f"iF_prompt_MKR: No generated texts found for {selected_character}. Check if Oobabooga is running in API mode and the character is available on tgwui character folder.")
             return
 
         for text in generated_texts:
-            combined_prompt = prompt_prefix + ' ' + text + ' ' + prompt_subfix
+            combined_prompt = prompt_prefix + ' ' + embellish_prompt + ' '+ text + ' ' + style_prompt + ' ' + prompt_subfix
             prompts.append(combined_prompt)
 
         p.prompts = prompts
@@ -537,10 +717,10 @@ class Script(scripts.Script):
         p.prompt_subfix = prompt_subfix
         p.selected_character = selected_character
         p.input_prompt = input_prompt
+        p.select_text_model = select_text_model
 
 
         return self.process_images(p, prompt_per_image, prompt_per_batch, default_mode, batch_count, batch_size)
-
 
     def process_images(self, p, prompt_per_image, prompt_per_batch, default_mode, batch_count, batch_size):
         modules.processing.fix_seed(p)
